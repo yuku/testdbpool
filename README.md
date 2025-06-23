@@ -9,6 +9,7 @@ A Go library designed to accelerate PostgreSQL-based testing by managing databas
 - **Multi-Process Support**: Share pools across multiple test packages via PostgreSQL state management
 - **Automatic Cleanup**: Integrates with `testing.T` for automatic resource management
 - **Flexible Reset Strategies**: Multiple ways to reset databases between tests
+- **pgx/v5 Support**: Optional wrapper for using pgx-specific features (see [pgxpool package](pgxpool/))
 
 ## Installation
 
@@ -192,6 +193,37 @@ This removes:
 3. **Test Runs**: Your test uses the isolated database
 4. **Release**: Automatically resets database and returns to pool
 5. **Subsequent Tests**: Reuse reset databases for speed
+
+## Using with pgx/v5
+
+If you need pgx-specific features like batch queries, COPY protocol, or notifications, use the pgxpool wrapper:
+
+```go
+import (
+    "github.com/yuku/testdbpool/pgxpool"
+)
+
+// Wrap your existing pool
+wrapper := pgxpool.New(pool)
+
+func TestWithPgx(t *testing.T) {
+    // Get a pgxpool.Pool instead of *sql.DB
+    pgxPool, err := wrapper.Acquire(t)
+    if err != nil {
+        t.Fatal(err)
+    }
+    
+    // Use pgx features
+    batch := &pgx.Batch{}
+    batch.Queue("INSERT INTO users (name) VALUES ($1)", "Alice")
+    batch.Queue("INSERT INTO users (name) VALUES ($1)", "Bob")
+    
+    results := pgxPool.SendBatch(ctx, batch)
+    defer results.Close()
+}
+```
+
+See the [pgxpool package documentation](pgxpool/) for more details.
 
 ## Thread Safety
 
