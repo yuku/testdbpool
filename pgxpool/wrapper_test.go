@@ -70,13 +70,14 @@ func TestMain(m *testing.M) {
 			return err
 		},
 		ResetFunc: testdbpool.ResetByTruncate(
-			[]string{"test_data"},
+			[]string{}, // truncate all tables
 			func(ctx context.Context, db *sql.DB) error {
 				_, err := db.ExecContext(ctx, `
-					INSERT INTO test_data (name, value) VALUES
-						('test1', 100),
-						('test2', 200),
-						('test3', 300)
+					INSERT INTO test_data (id, name, value) VALUES
+						(1, 'test1', 100),
+						(2, 'test2', 200),
+						(3, 'test3', 300);
+					SELECT setval('test_data_id_seq', 3);
 				`)
 				return err
 			},
