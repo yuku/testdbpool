@@ -58,34 +58,34 @@ func New(config Configuration) (*Pool, error) {
 
 	// Create state management table
 	if err := CreateStateTable(ctx, stateDB); err != nil {
-		stateDB.Close()
+		_ = stateDB.Close()
 		return nil, fmt.Errorf("failed to create state table: %w", err)
 	}
 
 	// Check for existing pool
 	tx, err := stateDB.BeginTx(ctx, nil)
 	if err != nil {
-		stateDB.Close()
+		_ = stateDB.Close()
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	state, err := GetPoolState(ctx, tx, config.PoolID)
 	if err != nil {
-		stateDB.Close()
+		_ = stateDB.Close()
 		return nil, fmt.Errorf("failed to get pool state: %w", err)
 	}
 
 	// If new pool, insert configuration
 	if state == nil {
 		if err := InsertPoolState(ctx, tx, config.PoolID, config.MaxPoolSize); err != nil {
-			stateDB.Close()
+			_ = stateDB.Close()
 			return nil, fmt.Errorf("failed to insert pool state: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		stateDB.Close()
+		_ = stateDB.Close()
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -126,7 +126,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 			}
 
 			if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
-				templateConn.Close()
+				_ = templateConn.Close()
 				return nil, fmt.Errorf("failed to execute template creator: %w", err)
 			}
 
@@ -144,7 +144,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Acquire pool state lock
 	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
@@ -202,7 +202,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 	// Register cleanup
 	t.Cleanup(func() {
 		// Close the database connection
-		db.Close()
+		_ = db.Close()
 
 		// Execute reset function
 		resetCtx := context.Background()
@@ -212,7 +212,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 			p.ReleaseDatabase(dbName, true)
 			return
 		}
-		defer resetDB.Close()
+		defer func() { _ = resetDB.Close() }()
 
 		resetSuccess := false
 		if err := p.Config.ResetFunc(resetCtx, resetDB); err != nil {
@@ -238,7 +238,7 @@ func (p *Pool) ReleaseDatabase(dbName string, failed bool) {
 		log.Printf("failed to begin transaction for release: %v", err)
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
 	if err != nil {

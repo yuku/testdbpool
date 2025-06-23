@@ -179,10 +179,10 @@ func TestPasswordSources(t *testing.T) {
 	t.Run("DefaultPasswordSource", func(t *testing.T) {
 		// Save current env
 		oldPassword := os.Getenv("DB_PASSWORD")
-		defer os.Setenv("DB_PASSWORD", oldPassword)
+		defer func() { _ = os.Setenv("DB_PASSWORD", oldPassword) }()
 
 		// Test with DB_PASSWORD
-		os.Setenv("DB_PASSWORD", "testpass123")
+		_ = os.Setenv("DB_PASSWORD", "testpass123")
 		password, err := tpgxpool.DefaultPasswordSource()
 		if err != nil {
 			t.Fatal(err)
@@ -192,9 +192,9 @@ func TestPasswordSources(t *testing.T) {
 		}
 
 		// Test with no password
-		os.Unsetenv("DB_PASSWORD")
-		os.Unsetenv("PGPASSWORD")
-		os.Unsetenv("POSTGRES_PASSWORD")
+		_ = os.Unsetenv("DB_PASSWORD")
+		_ = os.Unsetenv("PGPASSWORD")
+		_ = os.Unsetenv("POSTGRES_PASSWORD")
 		password, err = tpgxpool.DefaultPasswordSource()
 		if err != nil {
 			t.Fatal(err)
@@ -205,8 +205,8 @@ func TestPasswordSources(t *testing.T) {
 	})
 
 	t.Run("EnvPasswordSource", func(t *testing.T) {
-		os.Setenv("MY_CUSTOM_PASSWORD", "custom123")
-		defer os.Unsetenv("MY_CUSTOM_PASSWORD")
+		_ = os.Setenv("MY_CUSTOM_PASSWORD", "custom123")
+		defer func() { _ = os.Unsetenv("MY_CUSTOM_PASSWORD") }()
 
 		source := tpgxpool.EnvPasswordSource("MY_CUSTOM_PASSWORD")
 		password, err := source()
@@ -239,10 +239,10 @@ func TestPasswordSources(t *testing.T) {
 
 func TestHostSources(t *testing.T) {
 	t.Run("EnvHostSource", func(t *testing.T) {
-		os.Setenv("MY_HOST", "myhost.example.com")
-		os.Setenv("MY_PORT", "5433")
-		defer os.Unsetenv("MY_HOST")
-		defer os.Unsetenv("MY_PORT")
+		_ = os.Setenv("MY_HOST", "myhost.example.com")
+		_ = os.Setenv("MY_PORT", "5433")
+		defer func() { _ = os.Unsetenv("MY_HOST") }()
+		defer func() { _ = os.Unsetenv("MY_PORT") }()
 
 		source := tpgxpool.EnvHostSource("MY_HOST", "MY_PORT")
 		host, port, err := source(nil)
@@ -372,7 +372,7 @@ func TestPgxSpecificFeatures(t *testing.T) {
 		batch.Queue("SELECT COUNT(*) FROM test_data WHERE name LIKE 'batch%'")
 
 		results := pool.SendBatch(ctx, batch)
-		defer results.Close()
+		defer func() { _ = results.Close() }()
 
 		// Process results
 		for i := 0; i < 2; i++ {
@@ -420,7 +420,7 @@ func TestPgxSpecificFeatures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer tx.Rollback(ctx)
+		defer func() { _ = tx.Rollback(ctx) }()
 
 		// Insert in transaction
 		_, err = tx.Exec(ctx, "INSERT INTO test_data (name, value) VALUES ($1, $2)", "tx_test", 99999)

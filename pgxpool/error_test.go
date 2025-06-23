@@ -9,19 +9,6 @@ import (
 	tpgxpool "github.com/yuku/testdbpool/pgxpool"
 )
 
-// mockPool is a mock implementation of testdbpool.Pool for testing error cases
-type mockPool struct {
-	acquireErr error
-	mockDB     *sql.DB
-}
-
-func (m *mockPool) Acquire(t *testing.T) (*sql.DB, error) {
-	if m.acquireErr != nil {
-		return nil, m.acquireErr
-	}
-	return m.mockDB, nil
-}
-
 func TestErrorHandling(t *testing.T) {
 	t.Run("AcquireError", func(t *testing.T) {
 		// Create a wrapper with configuration that will fail

@@ -33,7 +33,7 @@ func ResetByTruncate(tables []string, seedFunc func(ctx context.Context, db *sql
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Disable foreign key checks temporarily
 		if _, err := tx.ExecContext(ctx, "SET session_replication_role = 'replica'"); err != nil {
@@ -89,7 +89,7 @@ func ResetByRecreation(templateCreator func(ctx context.Context, db *sql.DB) err
 		if err != nil {
 			return fmt.Errorf("failed to query tables: %w", err)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		var tables []string
 		for rows.Next() {
@@ -150,9 +150,14 @@ func isValidTableName(name string) bool {
 			return false
 		}
 		for _, ch := range part {
-			if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-				(ch >= '0' && ch <= '9') || ch == '_') {
-				return false
+			if ch < 'a' || ch > 'z' {
+				if ch < 'A' || ch > 'Z' {
+					if ch < '0' || ch > '9' {
+						if ch != '_' {
+							return false
+						}
+					}
+				}
 			}
 		}
 	}

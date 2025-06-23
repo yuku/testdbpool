@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	// Always clean up any existing pool before tests
 	if err := testdbpool.Cleanup(rootDB, "example_test"); err != nil {

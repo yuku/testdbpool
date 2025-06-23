@@ -83,7 +83,7 @@ func createTestSchema(ctx context.Context, db *sql.DB) error {
 
 func TestNew(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	tests := []struct {
 		name    string
@@ -173,7 +173,7 @@ func TestNew(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean up before test
 			if tt.config.PoolID != "" && !tt.wantErr {
-				testdbpool.Cleanup(rootDB, tt.config.PoolID)
+				_ = testdbpool.Cleanup(rootDB, tt.config.PoolID)
 			}
 
 			pool, err := testdbpool.New(tt.config)
@@ -195,7 +195,7 @@ func TestNew(t *testing.T) {
 
 			// Clean up after test
 			if pool != nil && tt.config.PoolID != "" {
-				testdbpool.Cleanup(rootDB, tt.config.PoolID)
+				_ = testdbpool.Cleanup(rootDB, tt.config.PoolID)
 			}
 		})
 	}
@@ -203,12 +203,12 @@ func TestNew(t *testing.T) {
 
 func TestAcquire(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_acquire_pool"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
@@ -272,12 +272,12 @@ func TestAcquire(t *testing.T) {
 
 func TestConcurrentAcquire(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_concurrent_pool"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
@@ -344,12 +344,12 @@ func TestConcurrentAcquire(t *testing.T) {
 
 func TestPoolExhaustion(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_exhaustion_pool"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
@@ -419,7 +419,7 @@ func TestPoolExhaustion(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_cleanup_pool"
 

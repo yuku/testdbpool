@@ -154,7 +154,7 @@ func (w *Wrapper) AcquireBoth(t *testing.T) (*sql.DB, *pgxpool.Pool, error) {
 
 	// Register cleanup for sql.DB
 	t.Cleanup(func() {
-		sqlDB.Close()
+		_ = sqlDB.Close()
 	})
 
 	return sqlDB, pgxPool, nil

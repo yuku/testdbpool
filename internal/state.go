@@ -160,7 +160,7 @@ func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 		SELECT pg_terminate_backend(pid) 
 		FROM pg_stat_activity 
 		WHERE datname = '%s' AND pid <> pg_backend_pid()`, templateName)
-	db.ExecContext(ctx, terminateQuery)
+	_, _ = db.ExecContext(ctx, terminateQuery)
 
 	// Small delay to ensure connections are terminated
 	time.Sleep(100 * time.Millisecond)
@@ -182,7 +182,7 @@ func DropDatabase(ctx context.Context, db *sql.DB, dbName string) error {
 		SELECT pg_terminate_backend(pid) 
 		FROM pg_stat_activity 
 		WHERE datname = $1 AND pid <> pg_backend_pid()`
-	db.ExecContext(ctx, terminateQuery, dbName)
+	_, _ = db.ExecContext(ctx, terminateQuery, dbName)
 
 	// Small delay to ensure connections are terminated
 	time.Sleep(100 * time.Millisecond)

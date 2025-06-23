@@ -101,7 +101,7 @@ func ExampleWrapper_AcquireBoth() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Use pgx interface for batch operations
 	batch := &pgx.Batch{}
@@ -109,5 +109,5 @@ func ExampleWrapper_AcquireBoth() {
 	batch.Queue("UPDATE users SET last_seen = NOW() WHERE id = $1", 2)
 
 	results := pgxPool.SendBatch(ctx, batch)
-	defer results.Close()
+	defer func() { _ = results.Close() }()
 }

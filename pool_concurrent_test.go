@@ -14,12 +14,12 @@ import (
 // when more goroutines than the pool size try to acquire databases simultaneously
 func TestMaxPoolSizeEnforcement(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_max_pool_enforcement"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	const maxPoolSize = 3
 	const numGoroutines = 10
@@ -36,7 +36,7 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	// Use atomic counters to track results
 	var activeCount int32
@@ -150,12 +150,12 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 // TestPoolWaitingBehavior tests what happens when goroutines wait for available databases
 func TestPoolWaitingBehavior(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_pool_waiting"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
@@ -169,7 +169,7 @@ func TestPoolWaitingBehavior(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	// Acquire all databases
 	db1, err := pool.Acquire(t)
@@ -205,7 +205,7 @@ func TestPoolWaitingBehavior(t *testing.T) {
 	}
 
 	// Release one database
-	db1.Close()
+	_ = db1.Close()
 
 	// The waiting goroutine should now fail with pool exhausted
 	// (because we don't implement waiting, just immediate failure)
@@ -221,18 +221,18 @@ func TestPoolWaitingBehavior(t *testing.T) {
 	}
 
 	// Clean up
-	db2.Close()
+	_ = db2.Close()
 }
 
 // TestRapidAcquireRelease tests rapid acquire/release cycles
 func TestRapidAcquireRelease(t *testing.T) {
 	rootDB := getTestRootDB(t)
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	poolID := "test_rapid_acquire"
 
 	// Clean up before test
-	testdbpool.Cleanup(rootDB, poolID)
+	_ = testdbpool.Cleanup(rootDB, poolID)
 
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
@@ -245,7 +245,7 @@ func TestRapidAcquireRelease(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	const numIterations = 20
 	successCount := 0

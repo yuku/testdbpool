@@ -23,14 +23,14 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to state database: %w", err)
 	}
-	defer stateDB.Close()
+	defer func() { _ = stateDB.Close() }()
 
 	// Get pool state
 	tx, err := stateDB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	state, err := internal.GetPoolState(ctx, tx, poolID)
 	if err != nil {
