@@ -44,6 +44,9 @@ func main() {
 		"test_concurrent_pool",
 		"test_exhaustion_pool",
 		"test_cleanup_pool",
+		"test_max_pool_enforcement",
+		"test_pool_waiting",
+		"test_rapid_acquire",
 	}
 
 	for _, poolID := range poolIDs {
