@@ -19,7 +19,7 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	}
 
 	// Connect to state database
-	stateDB, err := sql.Open("postgres", internal.GetConnectionString(rootDB, "postgres"))
+	stateDB, err := sql.Open(internal.GetDriverName(rootDB), internal.GetConnectionString(rootDB, "postgres"))
 	if err != nil {
 		return fmt.Errorf("failed to connect to state database: %w", err)
 	}

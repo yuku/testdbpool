@@ -12,11 +12,11 @@ import (
 // environment variables or defaults
 func GetConnectionString(db *sql.DB, dbName string) string {
 	// In a real implementation, you'd pass the connection string through config
-	// For testing, we'll use localhost defaults
-	host := GetEnvOrDefault("PGHOST", "localhost")
-	port := GetEnvOrDefault("PGPORT", "5432")
-	user := GetEnvOrDefault("PGUSER", "postgres")
-	password := GetEnvOrDefault("PGPASSWORD", "postgres")
+	// For testing, we'll use environment variables that match what the tests set
+	host := GetEnvOrDefault("DB_HOST", GetEnvOrDefault("PGHOST", "localhost"))
+	port := GetEnvOrDefault("DB_PORT", GetEnvOrDefault("PGPORT", "5432"))
+	user := GetEnvOrDefault("DB_USER", GetEnvOrDefault("PGUSER", "postgres"))
+	password := GetEnvOrDefault("DB_PASSWORD", GetEnvOrDefault("PGPASSWORD", "postgres"))
 	sslmode := GetEnvOrDefault("PGSSLMODE", "disable")
 
 	if password != "" {
@@ -155,4 +155,29 @@ func buildConnectionString(params map[string]string) string {
 	}
 	
 	return baseURL
+}
+
+// GetDriverName returns the driver name from the database connection
+func GetDriverName(db *sql.DB) string {
+	// Since we need to maintain compatibility with existing connections,
+	// we'll use reflection to get the driver name from the db object
+	// This is a bit hacky but works for our use case
+	
+	dbStr := fmt.Sprintf("%v", db)
+	
+	// Check for common driver signatures in the string representation
+	if strings.Contains(dbStr, "pgx") || strings.Contains(dbStr, "jackc/pgx") {
+		return "pgx"
+	}
+	if strings.Contains(dbStr, "lib/pq") || strings.Contains(dbStr, "pq") {
+		return "postgres"
+	}
+	
+	// Try environment variable
+	if driver := os.Getenv("DB_DRIVER"); driver != "" {
+		return driver
+	}
+	
+	// Default to pgx since it's the most modern driver
+	return "pgx"
 }

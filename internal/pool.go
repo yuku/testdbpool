@@ -51,7 +51,7 @@ func New(config Configuration) (*Pool, error) {
 	// Connect to state management database
 	ctx := context.Background()
 	stateConnStr := GetConnectionString(config.RootConnection, config.StateDatabase)
-	stateDB, err := sql.Open("postgres", stateConnStr)
+	stateDB, err := sql.Open(GetDriverName(config.RootConnection), stateConnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to state database: %w", err)
 	}
@@ -101,26 +101,11 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.Config.AcquireTimeout)
 	defer cancel()
 
-	// Start transaction with timeout
-	tx, err := p.StateDB.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Acquire pool state lock
-	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pool state: %w", err)
-	}
-
-	if state == nil {
-		return nil, fmt.Errorf("pool state not found for pool_id: %s", p.Config.PoolID)
-	}
-
-	// Create template database on first acquire
+	// Create template database on first acquire (before transaction)
 	if !p.TemplateExists {
-		templateDB := state.TemplateDB
+		// We need to check if template exists first
+		// This is done outside transaction since CREATE DATABASE cannot run in a transaction
+		templateDB := fmt.Sprintf("%s_template", p.Config.PoolID)
 		exists, err := DatabaseExists(ctx, p.Config.RootConnection, templateDB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check template database existence: %w", err)
@@ -135,7 +120,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 
 			// Connect to template database and run template creator
 			templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
-			templateConn, err := sql.Open("postgres", templateConnStr)
+			templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
 			if err != nil {
 				return nil, fmt.Errorf("failed to connect to template database: %w", err)
 			}
@@ -152,6 +137,23 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 		}
 
 		p.TemplateExists = true
+	}
+
+	// Start transaction with timeout
+	tx, err := p.StateDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Acquire pool state lock
+	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pool state: %w", err)
+	}
+
+	if state == nil {
+		return nil, fmt.Errorf("pool state not found for pool_id: %s", p.Config.PoolID)
 	}
 
 	var dbName string
@@ -190,7 +192,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 
 	// Connect to the acquired database
 	dbConnStr := GetConnectionString(p.Config.RootConnection, dbName)
-	db, err := sql.Open("postgres", dbConnStr)
+	db, err := sql.Open(GetDriverName(p.Config.RootConnection), dbConnStr)
 	if err != nil {
 		// If we fail to connect, we should move the database back to available
 		p.ReleaseDatabase(dbName, false)
@@ -204,7 +206,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 
 		// Execute reset function
 		resetCtx := context.Background()
-		resetDB, err := sql.Open("postgres", dbConnStr)
+		resetDB, err := sql.Open(GetDriverName(p.Config.RootConnection), dbConnStr)
 		if err != nil {
 			t.Logf("failed to reconnect for reset: %v", err)
 			p.ReleaseDatabase(dbName, true)
