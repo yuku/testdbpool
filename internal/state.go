@@ -10,14 +10,14 @@ import (
 
 // PoolState represents a row in the testdbpool_state table
 type PoolState struct {
-	PoolID        string
-	TemplateDB    string
-	AvailableDBs  []string
-	InUseDBs      []string
-	FailedDBs     []string
-	MaxPoolSize   int
-	CreatedAt     time.Time
-	LastAccessed  time.Time
+	PoolID       string
+	TemplateDB   string
+	AvailableDBs []string
+	InUseDBs     []string
+	FailedDBs    []string
+	MaxPoolSize  int
+	CreatedAt    time.Time
+	LastAccessed time.Time
 }
 
 // CreateStateTable creates the pool state management table if it doesn't exist
@@ -33,7 +33,7 @@ func CreateStateTable(ctx context.Context, db *sql.DB) error {
 		created_at TIMESTAMP DEFAULT NOW(),
 		last_accessed TIMESTAMP DEFAULT NOW()
 	)`
-	
+
 	_, err := db.ExecContext(ctx, query)
 	return err
 }
@@ -46,10 +46,10 @@ func GetPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*PoolState, e
 	FROM testdbpool_state
 	WHERE pool_id = $1
 	FOR UPDATE`
-	
+
 	var state PoolState
 	var availableDBs, inUseDBs, failedDBs string
-	
+
 	err := tx.QueryRowContext(ctx, query, poolID).Scan(
 		&state.PoolID,
 		&state.TemplateDB,
@@ -60,19 +60,19 @@ func GetPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*PoolState, e
 		&state.CreatedAt,
 		&state.LastAccessed,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Parse PostgreSQL arrays
 	state.AvailableDBs = parsePostgresArray(availableDBs)
 	state.InUseDBs = parsePostgresArray(inUseDBs)
 	state.FailedDBs = parsePostgresArray(failedDBs)
-	
+
 	return &state, nil
 }
 
@@ -82,7 +82,7 @@ func InsertPoolState(ctx context.Context, tx *sql.Tx, poolID string, maxPoolSize
 	query := `
 	INSERT INTO testdbpool_state (pool_id, template_db, max_pool_size)
 	VALUES ($1, $2, $3)`
-	
+
 	_, err := tx.ExecContext(ctx, query, poolID, templateDB, maxPoolSize)
 	return err
 }
@@ -96,11 +96,11 @@ func UpdatePoolState(ctx context.Context, tx *sql.Tx, state *PoolState) error {
 	    failed_dbs = $3,
 	    last_accessed = NOW()
 	WHERE pool_id = $4`
-	
+
 	availableDBs := formatPostgresArray(state.AvailableDBs)
 	inUseDBs := formatPostgresArray(state.InUseDBs)
 	failedDBs := formatPostgresArray(state.FailedDBs)
-	
+
 	_, err := tx.ExecContext(ctx, query, availableDBs, inUseDBs, failedDBs, state.PoolID)
 	return err
 }
@@ -154,17 +154,17 @@ func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 	if !PoolIDRegex.MatchString(dbName) || !PoolIDRegex.MatchString(templateName) {
 		return fmt.Errorf("invalid database name")
 	}
-	
+
 	// First, ensure no active connections to template database
 	terminateQuery := fmt.Sprintf(`
 		SELECT pg_terminate_backend(pid) 
 		FROM pg_stat_activity 
 		WHERE datname = '%s' AND pid <> pg_backend_pid()`, templateName)
 	db.ExecContext(ctx, terminateQuery)
-	
+
 	// Small delay to ensure connections are terminated
 	time.Sleep(100 * time.Millisecond)
-	
+
 	query := fmt.Sprintf("CREATE DATABASE %s WITH TEMPLATE %s", dbName, templateName)
 	_, err := db.ExecContext(ctx, query)
 	return err
@@ -176,17 +176,17 @@ func DropDatabase(ctx context.Context, db *sql.DB, dbName string) error {
 	if !PoolIDRegex.MatchString(dbName) {
 		return fmt.Errorf("invalid database name")
 	}
-	
+
 	// First, terminate all connections to the database
 	terminateQuery := `
 		SELECT pg_terminate_backend(pid) 
 		FROM pg_stat_activity 
 		WHERE datname = $1 AND pid <> pg_backend_pid()`
 	db.ExecContext(ctx, terminateQuery, dbName)
-	
+
 	// Small delay to ensure connections are terminated
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Drop the database
 	query := fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName)
 	_, err := db.ExecContext(ctx, query)

@@ -376,3 +376,10 @@ func TestUserRepository(t *testing.T) {
 - Manual cleanup required (no automatic deletion)
 - Uses PostgreSQL transactions for inter-process communication (slight overhead)
 - PoolID limited to alphanumeric and underscore characters, max 50 characters
+
+## Development Guidelines
+
+### Code Formatting
+- **ALWAYS run `go fmt ./...` before committing any Go code changes**
+- This ensures consistent code formatting across the entire project
+- The CI pipeline expects properly formatted code

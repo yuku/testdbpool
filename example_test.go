@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	if password == "" {
 		password = "postgres"
 	}
-	
+
 	connStr := fmt.Sprintf("postgres://%s:%s@%s/postgres?sslmode=disable", user, password, host)
 	rootDB, err := sql.Open("postgres", connStr)
 	if err != nil {

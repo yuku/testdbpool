@@ -126,7 +126,7 @@ func TestBasicAcquire(t *testing.T) {
 
 func TestAcquireWithConfig(t *testing.T) {
 	called := false
-	
+
 	pool, err := poolWrapper.AcquireWithConfig(t, func(config *pgxpool.Config) {
 		called = true
 		config.MaxConns = 5
@@ -279,7 +279,7 @@ func TestCustomConfiguration(t *testing.T) {
 	if dbPassword == "" {
 		dbPassword = "postgres"
 	}
-	
+
 	// Create wrapper with custom configuration
 	customWrapper := tpgxpool.NewWithConfig(testPool, tpgxpool.Config{
 		PasswordSource: tpgxpool.StaticPasswordSource(dbPassword),

@@ -28,11 +28,11 @@ type Config struct {
 	// PasswordSource defines how to obtain the database password
 	// If nil, defaults to DefaultPasswordSource
 	PasswordSource PasswordSource
-	
+
 	// HostSource defines how to obtain the database host
-	// If nil, defaults to DefaultHostSource  
+	// If nil, defaults to DefaultHostSource
 	HostSource HostSource
-	
+
 	// Additional connection parameters to append to connection string
 	// e.g. "sslmode=require&connect_timeout=10"
 	AdditionalParams string
@@ -58,7 +58,7 @@ func NewWithConfig(pool *testdbpool.Pool, config Config) *Wrapper {
 	if config.HostSource == nil {
 		config.HostSource = DefaultHostSource
 	}
-	
+
 	return &Wrapper{
 		pool:   pool,
 		config: config,
@@ -191,19 +191,19 @@ func (w *Wrapper) buildConnectionString(db *sql.DB) (string, error) {
 	// Build base connection string with proper URL encoding
 	var connString string
 	if password != "" {
-		connString = fmt.Sprintf("postgres://%s:%s@%s:%s/%s", 
-			url.QueryEscape(user), 
-			url.QueryEscape(password), 
+		connString = fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
+			url.QueryEscape(user),
+			url.QueryEscape(password),
 			host, port, dbName)
 	} else {
-		connString = fmt.Sprintf("postgres://%s@%s:%s/%s", 
-			url.QueryEscape(user), 
+		connString = fmt.Sprintf("postgres://%s@%s:%s/%s",
+			url.QueryEscape(user),
 			host, port, dbName)
 	}
 
 	// Add default parameters
 	params := []string{"sslmode=disable"}
-	
+
 	// Add additional parameters
 	if w.config.AdditionalParams != "" {
 		params = append(params, w.config.AdditionalParams)
@@ -236,7 +236,7 @@ func DefaultHostSource(db *sql.DB) (host string, port string, error error) {
 			COALESCE(host(inet_server_addr()), 'localhost'),
 			COALESCE(inet_server_port()::text, '5432')
 	`).Scan(&host, &port)
-	
+
 	if err != nil {
 		// Fallback to environment variables
 		host = os.Getenv("DB_HOST")
@@ -246,7 +246,7 @@ func DefaultHostSource(db *sql.DB) (host string, port string, error error) {
 				host = "localhost"
 			}
 		}
-		
+
 		port = os.Getenv("DB_PORT")
 		if port == "" {
 			port = os.Getenv("PGPORT")
@@ -254,10 +254,10 @@ func DefaultHostSource(db *sql.DB) (host string, port string, error error) {
 				port = "5432"
 			}
 		}
-		
+
 		return host, port, nil
 	}
-	
+
 	return host, port, nil
 }
 
@@ -286,12 +286,12 @@ func EnvHostSource(hostVar, portVar string) HostSource {
 		if host == "" {
 			return "", "", fmt.Errorf("environment variable %s is not set", hostVar)
 		}
-		
+
 		port := os.Getenv(portVar)
 		if port == "" {
 			port = "5432" // Default PostgreSQL port
 		}
-		
+
 		return host, port, nil
 	}
 }

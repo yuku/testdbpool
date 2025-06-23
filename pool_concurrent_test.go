@@ -17,13 +17,13 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 	defer rootDB.Close()
 
 	poolID := "test_max_pool_enforcement"
-	
+
 	// Clean up before test
 	testdbpool.Cleanup(rootDB, poolID)
-	
+
 	const maxPoolSize = 3
 	const numGoroutines = 10
-	
+
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
 		PoolID:          poolID,
@@ -35,7 +35,7 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	
+
 	defer testdbpool.Cleanup(rootDB, poolID)
 
 	// Use atomic counters to track results
@@ -59,24 +59,24 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			t.Run(fmt.Sprintf("holder_%d", id), func(t *testing.T) {
 				db, err := pool.Acquire(t)
 				if err != nil {
 					t.Fatalf("holder %d: failed to acquire database: %v", id, err)
 				}
-				
+
 				atomic.AddInt32(&activeCount, 1)
-				
+
 				// Verify connection works
 				var result int
 				if err := db.QueryRow("SELECT 1").Scan(&result); err != nil {
 					t.Errorf("holder %d: failed to query: %v", id, err)
 				}
-				
+
 				// Hold the database until signaled
 				<-holdChan
-				
+
 				atomic.AddInt32(&activeCount, -1)
 			})
 		}(i)
@@ -153,10 +153,10 @@ func TestPoolWaitingBehavior(t *testing.T) {
 	defer rootDB.Close()
 
 	poolID := "test_pool_waiting"
-	
+
 	// Clean up before test
 	testdbpool.Cleanup(rootDB, poolID)
-	
+
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
 		PoolID:          poolID,
@@ -168,7 +168,7 @@ func TestPoolWaitingBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	
+
 	defer testdbpool.Cleanup(rootDB, poolID)
 
 	// Acquire all databases
@@ -230,10 +230,10 @@ func TestRapidAcquireRelease(t *testing.T) {
 	defer rootDB.Close()
 
 	poolID := "test_rapid_acquire"
-	
+
 	// Clean up before test
 	testdbpool.Cleanup(rootDB, poolID)
-	
+
 	pool, err := testdbpool.New(testdbpool.Configuration{
 		RootConnection:  rootDB,
 		PoolID:          poolID,
@@ -244,7 +244,7 @@ func TestRapidAcquireRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	
+
 	defer testdbpool.Cleanup(rootDB, poolID)
 
 	const numIterations = 20
@@ -273,4 +273,3 @@ func TestRapidAcquireRelease(t *testing.T) {
 		t.Errorf("Expected %d successful iterations, got %d", numIterations, successCount)
 	}
 }
-

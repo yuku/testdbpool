@@ -38,13 +38,13 @@ func GetEnvOrDefault(key, defaultValue string) string {
 // parseConnectionString parses a PostgreSQL connection string
 func parseConnectionString(connStr string) (map[string]string, error) {
 	params := make(map[string]string)
-	
+
 	// Simple parser for postgres://user:pass@host:port/dbname?params format
 	if strings.HasPrefix(connStr, "postgres://") || strings.HasPrefix(connStr, "postgresql://") {
 		// Remove prefix
 		connStr = strings.TrimPrefix(connStr, "postgres://")
 		connStr = strings.TrimPrefix(connStr, "postgresql://")
-		
+
 		// Split by ?
 		parts := strings.SplitN(connStr, "?", 2)
 		if len(parts) > 1 {
@@ -57,17 +57,17 @@ func parseConnectionString(connStr string) (map[string]string, error) {
 				}
 			}
 		}
-		
+
 		// Parse main part
 		mainPart := parts[0]
-		
+
 		// Extract database name
 		slashIdx := strings.LastIndex(mainPart, "/")
 		if slashIdx >= 0 {
 			params["dbname"] = mainPart[slashIdx+1:]
 			mainPart = mainPart[:slashIdx]
 		}
-		
+
 		// Extract host:port
 		atIdx := strings.LastIndex(mainPart, "@")
 		if atIdx >= 0 {
@@ -78,7 +78,7 @@ func parseConnectionString(connStr string) (map[string]string, error) {
 			} else {
 				params["host"] = hostPort
 			}
-			
+
 			// Extract user:password
 			userPass := mainPart[:atIdx]
 			if colonIdx := strings.Index(userPass, ":"); colonIdx >= 0 {
@@ -98,7 +98,7 @@ func parseConnectionString(connStr string) (map[string]string, error) {
 			}
 		}
 	}
-	
+
 	return params, nil
 }
 
@@ -106,54 +106,54 @@ func parseConnectionString(connStr string) (map[string]string, error) {
 func buildConnectionString(params map[string]string) string {
 	// Build in postgres://user:pass@host:port/dbname?params format
 	var parts []string
-	
+
 	// Required parts
 	user := params["user"]
 	if user == "" {
 		user = "postgres"
 	}
-	
+
 	host := params["host"]
 	if host == "" {
 		host = "localhost"
 	}
-	
+
 	dbname := params["dbname"]
 	if dbname == "" {
 		dbname = "postgres"
 	}
-	
+
 	// Build base URL
 	baseURL := "postgres://"
-	
+
 	// Add user and password
 	if pass, ok := params["password"]; ok && pass != "" {
 		baseURL += fmt.Sprintf("%s:%s@", user, pass)
 	} else {
 		baseURL += fmt.Sprintf("%s@", user)
 	}
-	
+
 	// Add host and port
 	if port, ok := params["port"]; ok && port != "" {
 		baseURL += fmt.Sprintf("%s:%s", host, port)
 	} else {
 		baseURL += host
 	}
-	
+
 	// Add database
 	baseURL += "/" + dbname
-	
+
 	// Add other parameters
 	for k, v := range params {
 		if k != "user" && k != "password" && k != "host" && k != "port" && k != "dbname" {
 			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
-	
+
 	if len(parts) > 0 {
 		baseURL += "?" + strings.Join(parts, "&")
 	}
-	
+
 	return baseURL
 }
 
@@ -161,12 +161,12 @@ func buildConnectionString(params map[string]string) string {
 func GetDriverName(db *sql.DB) string {
 	// To avoid data races, we'll use environment variables and defaults
 	// instead of trying to inspect the database object
-	
+
 	// First, check environment variable
 	if driver := os.Getenv("DB_DRIVER"); driver != "" {
 		return driver
 	}
-	
+
 	// For PostgreSQL, we support both "postgres" (lib/pq) and "pgx" drivers
 	// We'll try pgx first since it's imported, and fall back to postgres
 	return "pgx"

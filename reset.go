@@ -150,8 +150,8 @@ func isValidTableName(name string) bool {
 			return false
 		}
 		for _, ch := range part {
-			if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || 
-				 (ch >= '0' && ch <= '9') || ch == '_') {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+				(ch >= '0' && ch <= '9') || ch == '_') {
 				return false
 			}
 		}

@@ -9,15 +9,15 @@
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	
+//
 //	wrapper := pgxpool.New(pool)
-//	
+//
 //	func TestSomething(t *testing.T) {
 //	    pgxPool, err := wrapper.Acquire(t)
 //	    if err != nil {
 //	        t.Fatal(err)
 //	    }
-//	    
+//
 //	    // Use pgx-specific features
 //	    batch := &pgx.Batch{}
 //	    batch.Queue("INSERT INTO users (name) VALUES ($1)", "Alice")
@@ -59,7 +59,7 @@
 //	if err != nil {
 //	    t.Fatal(err)
 //	}
-//	
+//
 //	// Use sqlDB for database/sql operations
 //	// Use pgxPool for pgx-specific operations
 //

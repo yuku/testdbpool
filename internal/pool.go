@@ -129,7 +129,7 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 				templateConn.Close()
 				return nil, fmt.Errorf("failed to execute template creator: %w", err)
 			}
-			
+
 			// Close the connection to ensure template can be used
 			if err := templateConn.Close(); err != nil {
 				return nil, fmt.Errorf("failed to close template database connection: %w", err)

@@ -30,12 +30,12 @@ func TestErrorHandling(t *testing.T) {
 				return "", errors.New("password retrieval failed")
 			},
 		})
-		
+
 		_, err := wrapper.Acquire(t)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
-		
+
 		if !contains(err.Error(), "password retrieval failed") {
 			t.Errorf("expected password error, got: %v", err)
 		}
@@ -47,12 +47,12 @@ func TestErrorHandling(t *testing.T) {
 				return "", "", errors.New("host lookup failed")
 			},
 		})
-		
+
 		_, err := wrapper.Acquire(t)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
-		
+
 		if !contains(err.Error(), "host lookup failed") {
 			t.Errorf("expected host error, got: %v", err)
 		}
@@ -66,12 +66,12 @@ func TestErrorHandling(t *testing.T) {
 			},
 			AdditionalParams: "invalid=value with spaces&bad",
 		})
-		
+
 		_, err := wrapper.Acquire(t)
 		if err == nil {
 			t.Error("expected error, got nil")
 		}
-		
+
 		// The exact error depends on pgxpool's validation
 		if !contains(err.Error(), "failed to parse pgxpool config") && !contains(err.Error(), "failed to create pgxpool") {
 			t.Errorf("expected pgxpool config/creation error, got: %v", err)
@@ -84,7 +84,7 @@ func TestEdgeCases(t *testing.T) {
 		wrapper := tpgxpool.NewWithConfig(testPool, tpgxpool.Config{
 			PasswordSource: tpgxpool.StaticPasswordSource(""),
 		})
-		
+
 		_, err := wrapper.Acquire(t)
 		// Empty password might work or fail depending on PostgreSQL configuration
 		if err != nil {
@@ -105,7 +105,7 @@ func TestEdgeCases(t *testing.T) {
 		wrapper := tpgxpool.NewWithConfig(testPool, tpgxpool.Config{
 			PasswordSource: tpgxpool.StaticPasswordSource(specialPass),
 		})
-		
+
 		_, err := wrapper.Acquire(t)
 		// This will likely fail due to authentication, but should not fail due to URL encoding
 		if err != nil && (contains(err.Error(), "invalid URL escape") || contains(err.Error(), "failed to parse as URL")) {
@@ -119,7 +119,7 @@ func TestEdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		
+
 		// Verify connection works
 		ctx := context.Background()
 		var count int
