@@ -383,3 +383,8 @@ func TestUserRepository(t *testing.T) {
 - **ALWAYS run `go fmt ./...` before committing any Go code changes**
 - This ensures consistent code formatting across the entire project
 - The CI pipeline expects properly formatted code
+
+### Git Commits
+- **Make git commits at appropriate points during development**
+- Commit when you complete a logical unit of work or fix
+- Write clear, descriptive commit messages
