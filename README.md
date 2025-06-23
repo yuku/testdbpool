@@ -268,6 +268,52 @@ The library is designed for concurrent use:
 - Template database name limited by PostgreSQL's 63-character limit
 - No automatic cleanup (databases persist for performance)
 
+## Development
+
+### Setup
+
+1. Clone the repository
+2. Install Go 1.21 or later
+3. Install golangci-lint:
+   ```bash
+   curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+   ```
+4. Enable Git hooks:
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+
+### Pre-commit Hooks
+
+This project uses Git pre-commit hooks to ensure code quality. The hooks will:
+- Run `go fmt` to format all Go files
+- Run `golangci-lint` to check for common issues
+
+The hooks are automatically run before each commit. If any check fails, the commit will be aborted.
+
+### Running Tests
+
+```bash
+# Run all tests
+go test ./...
+
+# Run with race detection
+go test -race ./...
+
+# Run a specific package
+go test ./pgxpool
+```
+
+### Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Ensure all tests pass and code is properly formatted
+5. Commit your changes (pre-commit hooks will run automatically)
+6. Push to your branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
 ## License
 
 MIT License - see LICENSE file for details

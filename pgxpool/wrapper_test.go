@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	// Initialize test database pool
 	testPool, err = testdbpool.New(testdbpool.Configuration{
@@ -440,7 +440,7 @@ func TestPgxSpecificFeatures(t *testing.T) {
 		}
 
 		// Rollback and verify it's gone
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 
 		err = pool.QueryRow(ctx, "SELECT value FROM test_data WHERE name = $1", "tx_test").Scan(&value)
 		if err != pgx.ErrNoRows {

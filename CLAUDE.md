@@ -384,7 +384,21 @@ func TestUserRepository(t *testing.T) {
 - This ensures consistent code formatting across the entire project
 - The CI pipeline expects properly formatted code
 
+### Linting
+- **Run `golangci-lint run --timeout=5m` before committing**
+- Fix all linting issues before creating commits
+- The CI pipeline runs the same linting checks
+
 ### Git Commits
 - **Make git commits at appropriate points during development**
 - Commit when you complete a logical unit of work or fix
 - Write clear, descriptive commit messages
+
+### Pre-commit Hooks
+- **The repository uses Git pre-commit hooks to enforce code quality**
+- The hooks automatically run `go fmt` and `golangci-lint` before each commit
+- To enable the hooks in your local repository, run: `git config core.hooksPath .githooks`
+- The pre-commit hook will prevent commits if:
+  - Any Go files need formatting
+  - golangci-lint finds any issues
+- To bypass hooks in exceptional cases (not recommended): `git commit --no-verify`

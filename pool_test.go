@@ -226,7 +226,7 @@ func TestAcquire(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	t.Run("single acquire and release", func(t *testing.T) {
 		db, err := pool.Acquire(t)
@@ -290,7 +290,7 @@ func TestConcurrentAcquire(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	// Run tests to verify concurrent access
 	// Since databases are released when sub-tests complete, we may get more than 5 successes
@@ -363,7 +363,7 @@ func TestPoolExhaustion(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
-	defer testdbpool.Cleanup(rootDB, poolID)
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
 	// Use a WaitGroup to ensure databases are held
 	var wg sync.WaitGroup
