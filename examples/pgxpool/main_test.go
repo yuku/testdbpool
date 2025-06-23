@@ -107,6 +107,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestBasicPgxPoolUsage(t *testing.T) {
+	t.Parallel()
 	// Acquire a pgxpool
 	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
@@ -137,6 +138,7 @@ func TestBasicPgxPoolUsage(t *testing.T) {
 }
 
 func TestPgxBatchQueries(t *testing.T) {
+	t.Parallel()
 	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
@@ -173,6 +175,7 @@ func TestPgxBatchQueries(t *testing.T) {
 }
 
 func TestPgxCopyFrom(t *testing.T) {
+	t.Parallel()
 	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
@@ -213,6 +216,7 @@ func TestPgxCopyFrom(t *testing.T) {
 }
 
 func TestCustomPoolConfiguration(t *testing.T) {
+	t.Parallel()
 	// Acquire pool with custom configuration
 	pool, err := poolWrapper.AcquireWithConfig(t, func(config *pgxpool.Config) {
 		config.MaxConns = 5
@@ -258,6 +262,7 @@ func (tt *testTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pg
 }
 
 func TestBothInterfaces(t *testing.T) {
+	t.Parallel()
 	// Get both sql.DB and pgxpool.Pool
 	sqlDB, pgxPool, err := poolWrapper.AcquireBoth(t)
 	if err != nil {
@@ -286,6 +291,7 @@ func TestBothInterfaces(t *testing.T) {
 }
 
 func TestConcurrentPgxPoolAccess(t *testing.T) {
+	t.Parallel()
 	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
@@ -321,6 +327,7 @@ func TestConcurrentPgxPoolAccess(t *testing.T) {
 }
 
 func TestPgxNotifications(t *testing.T) {
+	t.Parallel()
 	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
