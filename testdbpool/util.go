@@ -3,15 +3,36 @@ package testdbpool
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 )
 
-// getConnectionString extracts connection string from sql.DB and changes database
+// getConnectionString creates a connection string for the given database name
+// Since sql.DB doesn't expose the original connection string, this uses
+// environment variables or defaults
 func getConnectionString(db *sql.DB, dbName string) string {
-	// This is a simplified version - in production you'd need to properly parse the DSN
-	// For now, we'll assume a standard postgres connection string format
-	// Note: sql.DB doesn't expose the original connection string, so this is a workaround
-	return fmt.Sprintf("postgres://postgres@localhost/%s?sslmode=disable", dbName)
+	// In a real implementation, you'd pass the connection string through config
+	// For testing, we'll use localhost defaults
+	host := getEnvOrDefault("PGHOST", "localhost")
+	port := getEnvOrDefault("PGPORT", "5432")
+	user := getEnvOrDefault("PGUSER", "postgres")
+	password := getEnvOrDefault("PGPASSWORD", "postgres")
+	sslmode := getEnvOrDefault("PGSSLMODE", "disable")
+
+	if password != "" {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+			user, password, host, port, dbName, sslmode)
+	}
+	return fmt.Sprintf("postgres://%s@%s:%s/%s?sslmode=%s",
+		user, host, port, dbName, sslmode)
+}
+
+// getEnvOrDefault gets an environment variable or returns a default value
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 // parseConnectionString parses a PostgreSQL connection string
