@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,24 +116,30 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 			// Create template database
 			createQuery := fmt.Sprintf("CREATE DATABASE %s", templateDB)
 			if _, err := p.Config.RootConnection.ExecContext(ctx, createQuery); err != nil {
-				return nil, fmt.Errorf("failed to create template database: %w", err)
-			}
+				// Check if the error is because the database already exists (race condition)
+				if !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "duplicate key") {
+					return nil, fmt.Errorf("failed to create template database: %w", err)
+				}
+				// If database already exists, wait a bit and continue
+				time.Sleep(100 * time.Millisecond)
+			} else {
+				// Only run template creator if we actually created the database
+				// Connect to template database and run template creator
+				templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
+				templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
+				if err != nil {
+					return nil, fmt.Errorf("failed to connect to template database: %w", err)
+				}
 
-			// Connect to template database and run template creator
-			templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
-			templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
-			if err != nil {
-				return nil, fmt.Errorf("failed to connect to template database: %w", err)
-			}
+				if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
+					_ = templateConn.Close()
+					return nil, fmt.Errorf("failed to execute template creator: %w", err)
+				}
 
-			if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
-				_ = templateConn.Close()
-				return nil, fmt.Errorf("failed to execute template creator: %w", err)
-			}
-
-			// Close the connection to ensure template can be used
-			if err := templateConn.Close(); err != nil {
-				return nil, fmt.Errorf("failed to close template database connection: %w", err)
+				// Close the connection to ensure template can be used
+				if err := templateConn.Close(); err != nil {
+					return nil, fmt.Errorf("failed to close template database connection: %w", err)
+				}
 			}
 		}
 
@@ -206,6 +213,21 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 
 		// Execute reset function
 		resetCtx := context.Background()
+
+		// First check if database still exists
+		exists, err := DatabaseExists(resetCtx, p.Config.RootConnection, dbName)
+		if err != nil {
+			t.Logf("failed to check database existence for reset: %v", err)
+			p.ReleaseDatabase(dbName, true)
+			return
+		}
+
+		if !exists {
+			t.Logf("database %s no longer exists, skipping reset", dbName)
+			p.ReleaseDatabase(dbName, true)
+			return
+		}
+
 		resetDB, err := sql.Open(GetDriverName(p.Config.RootConnection), dbConnStr)
 		if err != nil {
 			t.Logf("failed to reconnect for reset: %v", err)
@@ -247,7 +269,7 @@ func (p *Pool) ReleaseDatabase(dbName string, failed bool) {
 	}
 
 	if state == nil {
-		log.Printf("pool state not found for release")
+		log.Printf("pool state not found for release (pool_id=%s, db=%s)", p.Config.PoolID, dbName)
 		return
 	}
 

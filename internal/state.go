@@ -167,6 +167,10 @@ func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 
 	query := fmt.Sprintf("CREATE DATABASE %s WITH TEMPLATE %s", dbName, templateName)
 	_, err := db.ExecContext(ctx, query)
+	if err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "duplicate key")) {
+		// Database already exists, this can happen in race conditions
+		return nil
+	}
 	return err
 }
 
