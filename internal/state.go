@@ -81,7 +81,8 @@ func InsertPoolState(ctx context.Context, tx *sql.Tx, poolID string, maxPoolSize
 	templateDB := fmt.Sprintf("%s_template", poolID)
 	query := `
 	INSERT INTO testdbpool_state (pool_id, template_db, max_pool_size)
-	VALUES ($1, $2, $3)`
+	VALUES ($1, $2, $3)
+	ON CONFLICT (pool_id) DO NOTHING`
 
 	_, err := tx.ExecContext(ctx, query, poolID, templateDB, maxPoolSize)
 	return err

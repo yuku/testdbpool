@@ -84,6 +84,17 @@ func New(config Configuration) (*Pool, error) {
 			_ = stateDB.Close()
 			return nil, fmt.Errorf("failed to insert pool state: %w", err)
 		}
+
+		// Re-fetch state in case another process created it concurrently
+		state, err = GetPoolState(ctx, tx, config.PoolID)
+		if err != nil {
+			_ = stateDB.Close()
+			return nil, fmt.Errorf("failed to get pool state after insert: %w", err)
+		}
+		if state == nil {
+			_ = stateDB.Close()
+			return nil, fmt.Errorf("pool state not found after insert")
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
