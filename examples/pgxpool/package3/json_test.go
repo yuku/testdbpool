@@ -8,23 +8,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/yuku/testdbpool/examples/pgxpool/shared"
 )
 
 type EventData struct {
 	Type      string    `json:"type"`
 	UserID    int       `json:"user_id"`
 	Timestamp time.Time `json:"timestamp"`
-	Details   map[string]interface{} `json:"details"`
+	Details   map[string]any `json:"details"`
 }
 
 func TestJSONOperations(t *testing.T) {
-	wrapper, err := shared.GetPoolWrapper()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pool, err := wrapper.Acquire(t)
+	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +31,7 @@ func TestJSONOperations(t *testing.T) {
 			Type:      "user_action",
 			UserID:    1,
 			Timestamp: time.Now(),
-			Details: map[string]interface{}{
+			Details: map[string]any{
 				"action": "login",
 				"ip":     "192.168.1.1",
 				"device": "mobile",
@@ -123,12 +117,7 @@ func TestJSONOperations(t *testing.T) {
 }
 
 func TestComplexJSONQueries(t *testing.T) {
-	wrapper, err := shared.GetPoolWrapper()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pool, err := wrapper.Acquire(t)
+	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,11 +125,11 @@ func TestComplexJSONQueries(t *testing.T) {
 	ctx := context.Background()
 
 	// Insert test data with complex JSON
-	testData := []map[string]interface{}{
+	testData := []map[string]any{
 		{
 			"type": "order",
 			"user_id": 1,
-			"items": []map[string]interface{}{
+			"items": []map[string]any{
 				{"product": "book", "price": 15.99, "quantity": 2},
 				{"product": "pen", "price": 2.50, "quantity": 5},
 			},
@@ -149,7 +138,7 @@ func TestComplexJSONQueries(t *testing.T) {
 		{
 			"type": "order",
 			"user_id": 2,
-			"items": []map[string]interface{}{
+			"items": []map[string]any{
 				{"product": "laptop", "price": 999.99, "quantity": 1},
 			},
 			"total": 999.99,
@@ -183,12 +172,7 @@ func TestComplexJSONQueries(t *testing.T) {
 }
 
 func TestParallelJSONOperations(t *testing.T) {
-	wrapper, err := shared.GetPoolWrapper()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pool, err := wrapper.Acquire(t)
+	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,12 +186,12 @@ func TestParallelJSONOperations(t *testing.T) {
 			defer func() { done <- true }()
 
 			// Create unique event data
-			event := map[string]interface{}{
+			event := map[string]any{
 				"type":       fmt.Sprintf("event_%d", id%3),
 				"package":    "package3",
 				"goroutine":  id,
 				"timestamp":  time.Now().Format(time.RFC3339),
-				"metrics": map[string]interface{}{
+				"metrics": map[string]any{
 					"cpu":    id * 10,
 					"memory": id * 100,
 				},

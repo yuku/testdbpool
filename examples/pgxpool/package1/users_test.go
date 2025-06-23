@@ -7,16 +7,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/yuku/testdbpool/examples/pgxpool/shared"
 )
 
 func TestUserOperations(t *testing.T) {
-	wrapper, err := shared.GetPoolWrapper()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pool, err := wrapper.Acquire(t)
+	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,12 +91,7 @@ func TestUserOperations(t *testing.T) {
 }
 
 func TestConcurrentUserAccess(t *testing.T) {
-	wrapper, err := shared.GetPoolWrapper()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pool, err := wrapper.Acquire(t)
+	pool, err := poolWrapper.Acquire(t)
 	if err != nil {
 		t.Fatal(err)
 	}
