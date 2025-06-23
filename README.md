@@ -200,6 +200,7 @@ If you need pgx-specific features like batch queries, COPY protocol, or notifica
 
 ```go
 import (
+    "github.com/yuku/testdbpool"
     "github.com/yuku/testdbpool/pgxpool"
 )
 
@@ -223,7 +224,31 @@ func TestWithPgx(t *testing.T) {
 }
 ```
 
-See the [pgxpool package documentation](pgxpool/) for more details.
+### pgxpool Features
+
+- **Batch Queries**: Execute multiple queries in one round trip
+- **COPY Protocol**: High-performance bulk data operations  
+- **Notifications**: Real-time events with LISTEN/NOTIFY
+- **Native Types**: Arrays, JSONB, custom types
+- **Connection Pool Stats**: Monitor and tune performance
+
+### Advanced pgxpool Configuration
+
+```go
+// Custom configuration
+wrapper := pgxpool.NewWithConfig(pool, pgxpool.Config{
+    PasswordSource: pgxpool.EnvPasswordSource("MY_DB_PASSWORD"),
+    AdditionalParams: "application_name=test_suite",
+})
+
+// Configure pgxpool settings
+pgxPool, err := wrapper.AcquireWithConfig(t, func(config *pgxpool.Config) {
+    config.MaxConns = 5
+    config.MinConns = 1
+})
+```
+
+See the [pgxpool package documentation](pgxpool/) and [examples](examples/pgxpool/) for more details.
 
 ## Thread Safety
 

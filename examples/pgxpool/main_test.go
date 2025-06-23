@@ -14,10 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/yuku/testdbpool"
-	"github.com/yuku/testdbpool/examples/pgxpool/wrapper"
+	tpgxpool "github.com/yuku/testdbpool/pgxpool"
 )
 
-var poolWrapper *wrapper.PoolWrapper
+var poolWrapper *tpgxpool.Wrapper
 
 func TestMain(m *testing.M) {
 	// Setup PostgreSQL connection for state management
@@ -100,7 +100,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// Create wrapper
-	poolWrapper = wrapper.NewPoolWrapper(pool)
+	poolWrapper = tpgxpool.New(pool)
 
 	// Run tests
 	os.Exit(m.Run())

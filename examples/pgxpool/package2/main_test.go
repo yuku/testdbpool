@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"github.com/yuku/testdbpool/examples/pgxpool/shared"
-	"github.com/yuku/testdbpool/examples/pgxpool/wrapper"
+	tpgxpool "github.com/yuku/testdbpool/pgxpool"
 )
 
-var poolWrapper *wrapper.PoolWrapper
+var poolWrapper *tpgxpool.Wrapper
 
 func TestMain(m *testing.M) {
 	// Initialize shared pool and get wrapper

@@ -1,6 +1,6 @@
 # pgxpool Example
 
-This example demonstrates how to wrap testdbpool to provide `pgxpool.Pool` instances instead of `*sql.DB`, enabling the use of pgx-specific features in tests. It also shows how multiple packages can share the same test database pool when running in parallel with `go test ./...`.
+This example demonstrates how to use the official `testdbpool/pgxpool` package to get `pgxpool.Pool` instances instead of `*sql.DB`, enabling the use of pgx-specific features in tests. It also shows how multiple packages can share the same test database pool when running in parallel with `go test ./...`.
 
 ## Overview
 
@@ -15,6 +15,11 @@ The wrapper provides several benefits:
 ### Basic Usage
 
 ```go
+import (
+    "github.com/yuku/testdbpool"
+    "github.com/yuku/testdbpool/pgxpool"
+)
+
 // In TestMain
 pool, err := testdbpool.New(testdbpool.Configuration{
     RootConnection:  rootDB,
@@ -23,8 +28,8 @@ pool, err := testdbpool.New(testdbpool.Configuration{
     ResetFunc:      resetData,
 })
 
-// Create wrapper
-poolWrapper := wrapper.NewPoolWrapper(pool)
+// Create wrapper using the official pgxpool package
+poolWrapper := pgxpool.New(pool)
 
 // In tests
 func TestSomething(t *testing.T) {
@@ -46,10 +51,17 @@ func TestSomething(t *testing.T) {
 ### Custom Configuration
 
 ```go
+// Use custom password and host sources
+poolWrapper := pgxpool.NewWithConfig(pool, pgxpool.Config{
+    PasswordSource: pgxpool.EnvPasswordSource("MY_DB_PASSWORD"),
+    HostSource: pgxpool.EnvHostSource("MY_DB_HOST", "MY_DB_PORT"),
+    AdditionalParams: "application_name=my_test_app",
+})
+
+// Or customize the pgxpool configuration
 pgxPool, err := poolWrapper.AcquireWithConfig(t, func(config *pgxpool.Config) {
     config.MaxConns = 5
     config.MinConns = 1
-    config.ConnConfig.Tracer = myTracer
 })
 ```
 
@@ -71,11 +83,13 @@ sqlDB, pgxPool, err := poolWrapper.AcquireBoth(t)
 
 ## Implementation Details
 
-The wrapper works by:
+The official `testdbpool/pgxpool` package works by:
 1. Acquiring a test database from testdbpool
 2. Extracting connection parameters from the active connection
 3. Creating a new pgxpool with the same database
 4. Managing cleanup automatically via `testing.T.Cleanup()`
+
+For more details, see the [testdbpool/pgxpool documentation](https://pkg.go.dev/github.com/yuku/testdbpool/pgxpool).
 
 ## Multi-Package Testing
 
@@ -101,8 +115,6 @@ This demonstrates that testdbpool correctly manages database isolation even when
 
 ```
 examples/pgxpool/
-├── wrapper/          # PoolWrapper implementation
-│   └── wrapper.go
 ├── shared/           # Shared test setup
 │   └── setup.go
 ├── package1/         # User-focused tests

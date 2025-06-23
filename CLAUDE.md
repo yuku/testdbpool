@@ -196,6 +196,121 @@ func ResetBySQL(resetSQL string) func(ctx context.Context, db *sql.DB) error
 func Cleanup(rootDB *sql.DB, poolID string) error
 ```
 
+## pgxpool Support
+
+The library provides an optional wrapper package `testdbpool/pgxpool` for users who need pgx-specific features:
+
+```go
+package pgxpool
+
+import (
+    "testing"
+    "github.com/jackc/pgx/v5/pgxpool"
+    "github.com/yuku/testdbpool"
+)
+
+// Wrapper wraps a testdbpool.Pool to provide pgxpool.Pool instances
+type Wrapper struct {
+    pool *testdbpool.Pool
+    config Config
+}
+
+// Config holds configuration for pgxpool wrapper
+type Config struct {
+    // Custom password source (default: environment variables)
+    PasswordSource PasswordSource
+    
+    // Custom host source (default: environment variables)
+    HostSource HostSource
+    
+    // Additional connection parameters
+    AdditionalParams string
+}
+
+// Create wrapper with default configuration
+func New(pool *testdbpool.Pool) *Wrapper
+
+// Create wrapper with custom configuration
+func NewWithConfig(pool *testdbpool.Pool, config Config) *Wrapper
+
+// Acquire pgxpool.Pool (automatically releases via testing.T.Cleanup)
+func (w *Wrapper) Acquire(t *testing.T) (*pgxpool.Pool, error)
+
+// Acquire with custom pgxpool configuration
+func (w *Wrapper) AcquireWithConfig(t *testing.T, configFunc func(*pgxpool.Config)) (*pgxpool.Pool, error)
+
+// Acquire both *sql.DB and *pgxpool.Pool
+func (w *Wrapper) AcquireBoth(t *testing.T) (*sql.DB, *pgxpool.Pool, error)
+```
+
+### pgxpool Usage Example
+
+```go
+import (
+    "github.com/yuku/testdbpool"
+    "github.com/yuku/testdbpool/pgxpool"
+)
+
+func TestMain(m *testing.M) {
+    // Create regular testdbpool
+    pool, err := testdbpool.New(testdbpool.Configuration{
+        RootConnection:  rootDB,
+        PoolID:         "myapp_test",
+        TemplateCreator: createSchema,
+        ResetFunc:      resetData,
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Wrap for pgxpool support
+    poolWrapper := pgxpool.New(pool)
+    
+    os.Exit(m.Run())
+}
+
+func TestBatchQueries(t *testing.T) {
+    // Get pgxpool.Pool instead of *sql.DB
+    pgxPool, err := poolWrapper.Acquire(t)
+    if err != nil {
+        t.Fatal(err)
+    }
+    
+    // Use pgx-specific features
+    batch := &pgx.Batch{}
+    batch.Queue("INSERT INTO users (name) VALUES ($1)", "Alice")
+    batch.Queue("INSERT INTO users (name) VALUES ($1)", "Bob")
+    
+    results := pgxPool.SendBatch(ctx, batch)
+    defer results.Close()
+}
+```
+
+### pgxpool Features
+
+- **Batch Queries**: Execute multiple queries in a single round trip
+- **COPY Protocol**: High-performance bulk data operations
+- **Notifications**: LISTEN/NOTIFY support
+- **Native Types**: Work with PostgreSQL arrays, JSON, etc.
+- **Connection Pool Stats**: Monitor pool health and performance
+- **Query Tracing**: Custom logging and monitoring
+
+### pgxpool Configuration
+
+The wrapper extracts connection parameters from the test database connection and constructs a pgxpool connection string. For security reasons, passwords cannot be extracted from existing connections, so the wrapper uses:
+
+1. **Default**: Environment variables (DB_PASSWORD, PGPASSWORD)
+2. **Custom**: Provide your own PasswordSource implementation
+
+```go
+// Custom password source
+poolWrapper := pgxpool.NewWithConfig(pool, pgxpool.Config{
+    PasswordSource: pgxpool.StaticPasswordSource("mypassword"),
+    HostSource: pgxpool.EnvHostSource("CUSTOM_HOST", "CUSTOM_PORT"),
+    AdditionalParams: "application_name=myapp_test",
+})
+```
+
 ## Usage Example
 
 ```go

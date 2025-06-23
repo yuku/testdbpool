@@ -10,18 +10,18 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/yuku/testdbpool"
-	"github.com/yuku/testdbpool/examples/pgxpool/wrapper"
+	tpgxpool "github.com/yuku/testdbpool/pgxpool"
 )
 
 var (
 	pool        *testdbpool.Pool
-	poolWrapper *wrapper.PoolWrapper
+	poolWrapper *tpgxpool.Wrapper
 	initOnce    sync.Once
 	initErr     error
 )
 
 // GetPoolWrapper returns the shared pool wrapper, initializing it if needed
-func GetPoolWrapper() (*wrapper.PoolWrapper, error) {
+func GetPoolWrapper() (*tpgxpool.Wrapper, error) {
 	initOnce.Do(func() {
 		initErr = initializePool()
 	})
@@ -152,7 +152,7 @@ func initializePool() error {
 	}
 
 	// Create wrapper
-	poolWrapper = wrapper.NewPoolWrapper(pool)
+	poolWrapper = tpgxpool.New(pool)
 	
 	log.Printf("Initialized shared pool with ID: pgxpool_multi_pkg")
 	return nil
