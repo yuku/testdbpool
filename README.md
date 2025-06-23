@@ -1,5 +1,9 @@
 # testdbpool - PostgreSQL Test Database Pool Library
 
+[![Test](https://github.com/yuku/testdbpool/actions/workflows/test.yml/badge.svg)](https://github.com/yuku/testdbpool/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/yuku/testdbpool.svg)](https://pkg.go.dev/github.com/yuku/testdbpool)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yuku/testdbpool)](https://goreportcard.com/report/github.com/yuku/testdbpool)
+
 A Go library designed to accelerate PostgreSQL-based testing by managing database pools using template databases for efficient database operations during test execution.
 
 ## Features
