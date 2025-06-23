@@ -292,52 +292,84 @@ func TestConcurrentAcquire(t *testing.T) {
 
 	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
 
-	// Run tests to verify concurrent access
-	// Create 10 sub-tests, each will try to acquire concurrently
+	// Run tests to verify concurrent access using goroutines
+	var wg sync.WaitGroup
 	var mu sync.Mutex
 	successCount := 0
 	poolExhaustedCount := 0
+	errors := []error{}
+
+	// Create a parent context for all operations
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	for i := 0; i < 10; i++ {
-		i := i // capture loop variable
-		t.Run(fmt.Sprintf("concurrent_%d", i), func(t *testing.T) {
-			t.Parallel() // Run sub-tests in parallel
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
 
-			db, err := pool.Acquire(t)
-			if err != nil {
-				// Pool exhaustion is expected and not an error
-				if containsString(err.Error(), "pool exhausted") {
+			// Create a helper testing.T that won't interfere with the parent
+			success := t.Run(fmt.Sprintf("concurrent_%d", i), func(t *testing.T) {
+				// Each sub-test gets its own connection
+				db, err := pool.Acquire(t)
+				if err != nil {
 					mu.Lock()
-					poolExhaustedCount++
+					if containsString(err.Error(), "pool exhausted") {
+						poolExhaustedCount++
+					} else {
+						errors = append(errors, fmt.Errorf("goroutine %d: %v", i, err))
+					}
 					mu.Unlock()
-				} else {
-					t.Errorf("unexpected error: %v", err)
+					return
 				}
-				return
+
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+
+				// Simulate some work
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(500 * time.Millisecond):
+				}
+
+				// Verify we can use the database
+				var res int
+				err = db.QueryRowContext(ctx, "SELECT 1").Scan(&res)
+				if err != nil {
+					mu.Lock()
+					errors = append(errors, fmt.Errorf("goroutine %d query failed: %v", i, err))
+					mu.Unlock()
+				}
+			})
+
+			if !success {
+				mu.Lock()
+				errors = append(errors, fmt.Errorf("goroutine %d test failed", i))
+				mu.Unlock()
 			}
-
-			mu.Lock()
-			successCount++
-			mu.Unlock()
-
-			// Simulate some work
-			time.Sleep(500 * time.Millisecond)
-
-			// Verify we can use the database
-			var res int
-			err = db.QueryRow("SELECT 1").Scan(&res)
-			if err != nil {
-				t.Errorf("failed to query: %v", err)
-				return
-			}
-		})
+		}(i)
 	}
 
-	// Wait for sub-tests to complete
-	// This happens automatically when the parent test finishes
+	// Wait for all goroutines to complete
+	wg.Wait()
 
-	// The verification will be done after all sub-tests complete
-	// We can't check successCount here because sub-tests run asynchronously
+	// Report any errors
+	for _, err := range errors {
+		t.Error(err)
+	}
+
+	// Verify results
+	if successCount < 5 {
+		t.Errorf("expected at least 5 successful acquisitions (pool size), got %d", successCount)
+	}
+
+	totalAttempts := successCount + poolExhaustedCount
+	if totalAttempts != 10 {
+		t.Errorf("expected 10 total attempts, got %d (success: %d, exhausted: %d)",
+			totalAttempts, successCount, poolExhaustedCount)
+	}
 }
 
 func TestPoolExhaustion(t *testing.T) {
