@@ -40,7 +40,7 @@ func TestUserOperations(t *testing.T) {
 		}
 
 		// Log activity to package1_data
-		_, err = pool.Exec(ctx, "INSERT INTO package1_data (data) VALUES ($1)", 
+		_, err = pool.Exec(ctx, "INSERT INTO package1_data (data) VALUES ($1)",
 			"Created user in package1 test")
 		if err != nil {
 			t.Fatal(err)
@@ -49,14 +49,14 @@ func TestUserOperations(t *testing.T) {
 
 	t.Run("BatchUserQueries", func(t *testing.T) {
 		batch := &pgx.Batch{}
-		
+
 		// Queue multiple user queries
 		batch.Queue("SELECT COUNT(*) FROM users")
 		batch.Queue("SELECT name FROM users WHERE email = $1", "alice@example.com")
 		batch.Queue("SELECT COUNT(*) FROM posts WHERE user_id = 1")
-		
+
 		results := pool.SendBatch(ctx, batch)
-		defer results.Close()
+		defer func() { _ = results.Close() }()
 
 		// Get user count
 		var userCount int

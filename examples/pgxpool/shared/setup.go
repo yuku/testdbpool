@@ -153,7 +153,7 @@ func initializePool() error {
 
 	// Create wrapper
 	poolWrapper = tpgxpool.New(pool)
-	
+
 	log.Printf("Initialized shared pool with ID: pgxpool_multi_pkg")
 	return nil
 }

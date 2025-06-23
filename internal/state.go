@@ -156,17 +156,27 @@ func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 	}
 
 	// First, ensure no active connections to template database
-	terminateQuery := fmt.Sprintf(`
-		SELECT pg_terminate_backend(pid) 
-		FROM pg_stat_activity 
-		WHERE datname = '%s' AND pid <> pg_backend_pid()`, templateName)
-	_, _ = db.ExecContext(ctx, terminateQuery)
+	// Only terminate connections if the template database already exists
+	var exists bool
+	checkQuery := "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
+	err := db.QueryRowContext(ctx, checkQuery, templateName).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check if template database exists: %w", err)
+	}
 
-	// Small delay to ensure connections are terminated
-	time.Sleep(100 * time.Millisecond)
+	if exists {
+		terminateQuery := fmt.Sprintf(`
+			SELECT pg_terminate_backend(pid) 
+			FROM pg_stat_activity 
+			WHERE datname = '%s' AND pid <> pg_backend_pid()`, templateName)
+		_, _ = db.ExecContext(ctx, terminateQuery)
+
+		// Small delay to ensure connections are terminated
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	query := fmt.Sprintf("CREATE DATABASE %s WITH TEMPLATE %s", dbName, templateName)
-	_, err := db.ExecContext(ctx, query)
+	_, err = db.ExecContext(ctx, query)
 	if err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "duplicate key")) {
 		// Database already exists, this can happen in race conditions
 		return nil

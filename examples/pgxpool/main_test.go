@@ -43,7 +43,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer rootDB.Close()
+	defer func() { _ = rootDB.Close() }()
 
 	// Initialize test database pool
 	pool, err := testdbpool.New(testdbpool.Configuration{
@@ -151,7 +151,7 @@ func TestPgxBatchQueries(t *testing.T) {
 	batch.Queue("SELECT COUNT(*) FROM posts")
 
 	results := pool.SendBatch(ctx, batch)
-	defer results.Close()
+	defer func() { _ = results.Close() }()
 
 	// Process batch results
 	for i := 0; i < 2; i++ {
@@ -219,7 +219,7 @@ func TestCustomPoolConfiguration(t *testing.T) {
 		config.MinConns = 1
 		config.MaxConnLifetime = 5 * time.Minute
 		config.MaxConnIdleTime = 1 * time.Minute
-		
+
 		// Add custom query tracer
 		config.ConnConfig.Tracer = &testTracer{t: t}
 	})
@@ -316,7 +316,7 @@ func TestConcurrentPgxPoolAccess(t *testing.T) {
 
 	// Check pool statistics
 	stats := pool.Stat()
-	t.Logf("Pool stats - Total: %d, Idle: %d, Acquired: %d", 
+	t.Logf("Pool stats - Total: %d, Idle: %d, Acquired: %d",
 		stats.TotalConns(), stats.IdleConns(), stats.AcquiredConns())
 }
 

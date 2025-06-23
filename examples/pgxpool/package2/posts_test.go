@@ -110,7 +110,7 @@ func TestPostStatistics(t *testing.T) {
 		}
 		t.Logf("  %s: %d posts (%.1f%%)", name, count, percentage)
 		totalPercentage += percentage
-		
+
 		// Store statistics
 		_, err = pool.Exec(ctx, "INSERT INTO package2_data (value) VALUES ($1)", count)
 		if err != nil {
@@ -141,14 +141,14 @@ func TestConcurrentPostCreation(t *testing.T) {
 
 			userID := (id % 3) + 1
 			title := fmt.Sprintf("Concurrent Post %d from Package2", id)
-			
+
 			var postID int
 			err := pool.QueryRow(ctx, `
 				INSERT INTO posts (user_id, title, content)
 				VALUES ($1, $2, $3)
 				RETURNING id
 			`, userID, title, "Concurrent content").Scan(&postID)
-			
+
 			if err != nil {
 				t.Errorf("Failed to create post %d: %v", id, err)
 				return

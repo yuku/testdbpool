@@ -11,9 +11,9 @@ import (
 )
 
 type EventData struct {
-	Type      string    `json:"type"`
-	UserID    int       `json:"user_id"`
-	Timestamp time.Time `json:"timestamp"`
+	Type      string         `json:"type"`
+	UserID    int            `json:"user_id"`
+	Timestamp time.Time      `json:"timestamp"`
 	Details   map[string]any `json:"details"`
 }
 
@@ -127,7 +127,7 @@ func TestComplexJSONQueries(t *testing.T) {
 	// Insert test data with complex JSON
 	testData := []map[string]any{
 		{
-			"type": "order",
+			"type":    "order",
 			"user_id": 1,
 			"items": []map[string]any{
 				{"product": "book", "price": 15.99, "quantity": 2},
@@ -136,7 +136,7 @@ func TestComplexJSONQueries(t *testing.T) {
 			"total": 43.98,
 		},
 		{
-			"type": "order",
+			"type":    "order",
 			"user_id": 2,
 			"items": []map[string]any{
 				{"product": "laptop", "price": 999.99, "quantity": 1},
@@ -165,7 +165,7 @@ func TestComplexJSONQueries(t *testing.T) {
 	}
 
 	t.Logf("Total revenue from orders: $%.2f", totalRevenue)
-	
+
 	if totalRevenue < 1000 {
 		t.Errorf("expected total revenue > 1000, got %.2f", totalRevenue)
 	}
@@ -187,10 +187,10 @@ func TestParallelJSONOperations(t *testing.T) {
 
 			// Create unique event data
 			event := map[string]any{
-				"type":       fmt.Sprintf("event_%d", id%3),
-				"package":    "package3",
-				"goroutine":  id,
-				"timestamp":  time.Now().Format(time.RFC3339),
+				"type":      fmt.Sprintf("event_%d", id%3),
+				"package":   "package3",
+				"goroutine": id,
+				"timestamp": time.Now().Format(time.RFC3339),
 				"metrics": map[string]any{
 					"cpu":    id * 10,
 					"memory": id * 100,
@@ -209,7 +209,7 @@ func TestParallelJSONOperations(t *testing.T) {
 				t.Errorf("goroutine %d: begin tx error: %v", id, err)
 				return
 			}
-			defer tx.Rollback(ctx)
+			defer func() { _ = tx.Rollback(ctx) }()
 
 			// Insert and immediately query
 			var insertedID int
@@ -267,6 +267,6 @@ func TestParallelJSONOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("Package3: Total JSON records: %d, Unique event types: %d", 
+	t.Logf("Package3: Total JSON records: %d, Unique event types: %d",
 		stats.TotalRows, stats.UniqueTypes)
 }

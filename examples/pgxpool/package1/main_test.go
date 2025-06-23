@@ -17,7 +17,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	
+
 	// Run tests
 	os.Exit(m.Run())
 }
