@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/yuku/testdbpool"
-	wrapper "github.com/yuku/testdbpool/examples/pgxpool"
+	"github.com/yuku/testdbpool/examples/pgxpool/wrapper"
 )
 
 var poolWrapper *wrapper.PoolWrapper
@@ -181,7 +181,7 @@ func TestPgxCopyFrom(t *testing.T) {
 	ctx := context.Background()
 
 	// Use pgx CopyFrom for bulk inserts
-	rows := [][]interface{}{
+	rows := [][]any{
 		{1, "Bulk Post 1", "Content 1"},
 		{2, "Bulk Post 2", "Content 2"},
 		{3, "Bulk Post 3", "Content 3"},

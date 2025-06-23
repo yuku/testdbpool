@@ -1,6 +1,6 @@
 # pgxpool Example
 
-This example demonstrates how to wrap testdbpool to provide `pgxpool.Pool` instances instead of `*sql.DB`, enabling the use of pgx-specific features in tests.
+This example demonstrates how to wrap testdbpool to provide `pgxpool.Pool` instances instead of `*sql.DB`, enabling the use of pgx-specific features in tests. It also shows how multiple packages can share the same test database pool when running in parallel with `go test ./...`.
 
 ## Overview
 
@@ -76,6 +76,45 @@ The wrapper works by:
 2. Extracting connection parameters from the active connection
 3. Creating a new pgxpool with the same database
 4. Managing cleanup automatically via `testing.T.Cleanup()`
+
+## Multi-Package Testing
+
+The example includes multiple packages to demonstrate pool sharing:
+
+- **package1**: User operations and batch queries
+- **package2**: Post operations, COPY protocol, and statistics
+- **package3**: JSON/JSONB operations and complex queries
+- **shared**: Common setup code for all packages
+
+### Running Tests
+
+Run all packages in parallel:
+```bash
+./test_parallel.sh
+# or
+go test -v ./...
+```
+
+This demonstrates that testdbpool correctly manages database isolation even when multiple packages run tests concurrently.
+
+## Package Structure
+
+```
+examples/pgxpool/
+├── wrapper/          # PoolWrapper implementation
+│   └── wrapper.go
+├── shared/           # Shared test setup
+│   └── setup.go
+├── package1/         # User-focused tests
+│   └── users_test.go
+├── package2/         # Post-focused tests
+│   └── posts_test.go
+├── package3/         # JSON operations tests
+│   └── json_test.go
+├── main_test.go      # Original single-package tests
+├── test_parallel.sh  # Script to run all tests in parallel
+└── README.md
+```
 
 ## Limitations
 
