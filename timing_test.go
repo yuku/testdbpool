@@ -38,7 +38,7 @@ func TestTimingIssues(t *testing.T) {
 					RootConnection:  rootDB,
 					PoolID:          poolID,
 					TemplateCreator: createTestSchema,
-					ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+					ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 				})
 				if err != nil {
 					errors <- err
@@ -65,7 +65,7 @@ func TestTimingIssues(t *testing.T) {
 			MaxPoolSize:     2,
 			AcquireTimeout:  100 * time.Millisecond, // Very short timeout
 			TemplateCreator: createTestSchema,
-			ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+			ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -99,7 +99,7 @@ func TestTimingIssues(t *testing.T) {
 				time.Sleep(500 * time.Millisecond)
 				return createTestSchema(ctx, db)
 			},
-			ResetFunc: testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+			ResetFunc: testdbpool.ResetByTruncate([]string{}, nil),
 		})
 		if err != nil {
 			t.Fatal(err)

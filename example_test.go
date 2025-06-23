@@ -79,14 +79,15 @@ func TestMain(m *testing.M) {
 			return nil
 		},
 		ResetFunc: testdbpool.ResetByTruncate(
-			[]string{"orders", "products"}, // Order matters: child tables first
+			[]string{}, // truncate all tables
 			func(ctx context.Context, db *sql.DB) error {
 				// Restore initial data
 				_, err := db.ExecContext(ctx, `
-					INSERT INTO products (name, price, stock) VALUES 
-					('Widget', 9.99, 100),
-					('Gadget', 19.99, 50),
-					('Doohickey', 4.99, 200)
+					INSERT INTO products (id, name, price, stock) VALUES 
+					(1, 'Widget', 9.99, 100),
+					(2, 'Gadget', 19.99, 50),
+					(3, 'Doohickey', 4.99, 200);
+					SELECT setval('products_id_seq', 3);
 				`)
 				return err
 			},

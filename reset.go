@@ -18,13 +18,13 @@ func ResetByTransaction() func(ctx context.Context, db *sql.DB) error {
 	}
 }
 
-// ResetByTruncate returns a reset function that truncates specified tables and restores initial data
-func ResetByTruncate(tables []string, seedFunc func(ctx context.Context, db *sql.DB) error) func(ctx context.Context, db *sql.DB) error {
+// ResetByTruncate returns a reset function that truncates all user tables except specified exclusions
+func ResetByTruncate(excludeTables []string, seedFunc func(ctx context.Context, db *sql.DB) error) func(ctx context.Context, db *sql.DB) error {
 	return func(ctx context.Context, db *sql.DB) error {
-		// Validate table names to prevent SQL injection
-		for _, table := range tables {
+		// Validate exclude table names to prevent SQL injection
+		for _, table := range excludeTables {
 			if !isValidTableName(table) {
-				return fmt.Errorf("invalid table name: %s", table)
+				return fmt.Errorf("invalid exclude table name: %s", table)
 			}
 		}
 
@@ -35,31 +35,56 @@ func ResetByTruncate(tables []string, seedFunc func(ctx context.Context, db *sql
 		}
 		defer func() { _ = tx.Rollback() }()
 
+		// Get all user-created tables in public schema
+		query := `
+		SELECT tablename 
+		FROM pg_tables 
+		WHERE schemaname = 'public'
+		ORDER BY tablename
+		`
+
+		rows, err := tx.QueryContext(ctx, query)
+		if err != nil {
+			return fmt.Errorf("failed to query tables: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+
+		var allTables []string
+		for rows.Next() {
+			var table string
+			if err := rows.Scan(&table); err != nil {
+				return fmt.Errorf("failed to scan table name: %w", err)
+			}
+			allTables = append(allTables, table)
+		}
+
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("failed to iterate tables: %w", err)
+		}
+
+		// Filter out excluded tables
+		var tablesToTruncate []string
+		excludeMap := make(map[string]bool)
+		for _, exclude := range excludeTables {
+			excludeMap[exclude] = true
+		}
+
+		for _, table := range allTables {
+			if !excludeMap[table] {
+				tablesToTruncate = append(tablesToTruncate, table)
+			}
+		}
+
 		// Disable foreign key checks temporarily
 		if _, err := tx.ExecContext(ctx, "SET session_replication_role = 'replica'"); err != nil {
 			return fmt.Errorf("failed to disable foreign key checks: %w", err)
 		}
 
-		// Check which tables actually exist before truncating
-		var existingTables []string
-		for _, table := range tables {
-			var exists bool
-			err := tx.QueryRowContext(ctx,
-				"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public')",
-				table).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("failed to check table existence for %s: %w", table, err)
-			}
-			if exists {
-				existingTables = append(existingTables, table)
-			}
-		}
-
-		// Truncate all existing tables in one command for better atomicity
-		if len(existingTables) > 0 {
-			tableList := strings.Join(existingTables, ", ")
-			query := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", tableList)
-			if _, err := tx.ExecContext(ctx, query); err != nil {
+		// Truncate all non-excluded tables in one command for better atomicity
+		if len(tablesToTruncate) > 0 {
+			tableList := strings.Join(tablesToTruncate, ", ")
+			truncateQuery := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", tableList)
+			if _, err := tx.ExecContext(ctx, truncateQuery); err != nil {
 				return fmt.Errorf("failed to truncate tables %s: %w", tableList, err)
 			}
 		}

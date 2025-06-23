@@ -97,7 +97,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  rootDB,
 				PoolID:          "test_pool_1",
 				TemplateCreator: createTestSchema,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: false,
 		},
@@ -107,7 +107,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  nil,
 				PoolID:          "test_pool_2",
 				TemplateCreator: createTestSchema,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: true,
 			errMsg:  "RootConnection must not be nil",
@@ -118,7 +118,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  rootDB,
 				PoolID:          "",
 				TemplateCreator: createTestSchema,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: true,
 			errMsg:  "PoolID must not be empty",
@@ -129,7 +129,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  rootDB,
 				PoolID:          "test-pool-invalid",
 				TemplateCreator: createTestSchema,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: true,
 			errMsg:  "PoolID must contain only alphanumeric characters and underscores",
@@ -140,7 +140,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  rootDB,
 				PoolID:          "this_is_a_very_long_pool_id_that_exceeds_fifty_characters_limit",
 				TemplateCreator: createTestSchema,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: true,
 			errMsg:  "PoolID must be 50 characters or less",
@@ -151,7 +151,7 @@ func TestNew(t *testing.T) {
 				RootConnection:  rootDB,
 				PoolID:          "test_pool_3",
 				TemplateCreator: nil,
-				ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+				ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil), // truncate all tables
 			},
 			wantErr: true,
 			errMsg:  "TemplateCreator must not be nil",
@@ -215,10 +215,11 @@ func TestAcquire(t *testing.T) {
 		PoolID:          poolID,
 		MaxPoolSize:     3,
 		TemplateCreator: createTestSchema,
-		ResetFunc: testdbpool.ResetByTruncate([]string{"posts", "users"}, func(ctx context.Context, db *sql.DB) error {
-			_, err := db.ExecContext(ctx, `INSERT INTO users (name, email) VALUES 
-				('Test User 1', 'test1@example.com'),
-				('Test User 2', 'test2@example.com')`)
+		ResetFunc: testdbpool.ResetByTruncate([]string{}, func(ctx context.Context, db *sql.DB) error {
+			_, err := db.ExecContext(ctx, `INSERT INTO users (id, name, email) VALUES 
+				(1, 'Test User 1', 'test1@example.com'),
+				(2, 'Test User 2', 'test2@example.com');
+			SELECT setval('users_id_seq', 2);`)
 			return err
 		}),
 	})
@@ -284,7 +285,7 @@ func TestConcurrentAcquire(t *testing.T) {
 		PoolID:          poolID,
 		MaxPoolSize:     5,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
@@ -387,7 +388,7 @@ func TestPoolExhaustion(t *testing.T) {
 		MaxPoolSize:     2,
 		AcquireTimeout:  2 * time.Second,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
@@ -458,7 +459,7 @@ func TestCleanup(t *testing.T) {
 		RootConnection:  rootDB,
 		PoolID:          poolID,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
@@ -509,4 +510,158 @@ func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && s[len(s)-len(substr):] == substr ||
 		len(s) >= len(substr) && s[:len(substr)] == substr ||
 		len(substr) < len(s) && containsString(s[1:], substr)
+}
+
+// TestExcludeTablesDemo demonstrates the excludeTables functionality
+func TestExcludeTablesDemo(t *testing.T) {
+	rootDB := getTestRootDB(t)
+	defer func() { _ = rootDB.Close() }()
+
+	poolID := "exclude_demo_pool"
+	_ = testdbpool.Cleanup(rootDB, poolID)
+
+	pool, err := testdbpool.New(testdbpool.Configuration{
+		RootConnection: rootDB,
+		PoolID:         poolID,
+		MaxPoolSize:    3,
+		TemplateCreator: func(ctx context.Context, db *sql.DB) error {
+			// Create tables including enum/static tables
+			schema := `
+				-- Static enum table (should be excluded from truncation)
+				CREATE TABLE user_types (
+					id SERIAL PRIMARY KEY,
+					name VARCHAR(50) NOT NULL UNIQUE
+				);
+
+				-- Another static table
+				CREATE TABLE categories (
+					id SERIAL PRIMARY KEY,
+					name VARCHAR(100) NOT NULL,
+					description TEXT
+				);
+
+				-- Dynamic tables (will be truncated)
+				CREATE TABLE users (
+					id SERIAL PRIMARY KEY,
+					name VARCHAR(100) NOT NULL,
+					user_type_id INTEGER REFERENCES user_types(id)
+				);
+
+				CREATE TABLE posts (
+					id SERIAL PRIMARY KEY,
+					user_id INTEGER REFERENCES users(id),
+					category_id INTEGER REFERENCES categories(id),
+					title VARCHAR(200) NOT NULL,
+					content TEXT
+				);
+
+				-- Insert static/enum data
+				INSERT INTO user_types (name) VALUES ('admin'), ('user'), ('guest');
+				INSERT INTO categories (name, description) VALUES 
+					('Tech', 'Technology posts'),
+					('News', 'News articles'),
+					('Tutorial', 'How-to guides');
+
+				-- Insert some test data
+				INSERT INTO users (name, user_type_id) VALUES ('Alice', 1), ('Bob', 2);
+				INSERT INTO posts (user_id, category_id, title, content) VALUES 
+					(1, 1, 'Test Post', 'Test content'),
+					(2, 2, 'Another Post', 'More content');
+			`
+			_, err := db.ExecContext(ctx, schema)
+			return err
+		},
+		// Exclude static/enum tables from truncation
+		ResetFunc: testdbpool.ResetByTruncate(
+			[]string{"user_types", "categories"}, // exclude these static tables
+			func(ctx context.Context, db *sql.DB) error {
+				// Re-insert only dynamic data with explicit IDs and reset sequences
+				_, err := db.ExecContext(ctx, `
+					INSERT INTO users (id, name, user_type_id) VALUES (1, 'Alice', 1), (2, 'Bob', 2);
+					INSERT INTO posts (id, user_id, category_id, title, content) VALUES 
+						(1, 1, 1, 'Test Post', 'Test content'),
+						(2, 2, 2, 'Another Post', 'More content');
+					
+					-- Reset sequences to continue from where we left off
+					SELECT setval('users_id_seq', 2);
+					SELECT setval('posts_id_seq', 2);
+				`)
+				return err
+			},
+		),
+	})
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+
+	defer func() { _ = testdbpool.Cleanup(rootDB, poolID) }()
+
+	t.Run("first use - verify static data exists", func(t *testing.T) {
+		db, err := pool.Acquire(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Check that static tables have data
+		var userTypeCount, categoryCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM user_types").Scan(&userTypeCount)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = db.QueryRow("SELECT COUNT(*) FROM categories").Scan(&categoryCount)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if userTypeCount != 3 {
+			t.Errorf("expected 3 user types, got %d", userTypeCount)
+		}
+		if categoryCount != 3 {
+			t.Errorf("expected 3 categories, got %d", categoryCount)
+		}
+
+		// Add some data
+		_, err = db.Exec("INSERT INTO users (name, user_type_id) VALUES ('Charlie', 3)")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("second use - static data should still exist", func(t *testing.T) {
+		db, err := pool.Acquire(t)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Static tables should still have their data (not truncated)
+		var userTypeCount, categoryCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM user_types").Scan(&userTypeCount)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = db.QueryRow("SELECT COUNT(*) FROM categories").Scan(&categoryCount)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// These should be preserved
+		if userTypeCount != 3 {
+			t.Errorf("expected 3 user types (preserved), got %d", userTypeCount)
+		}
+		if categoryCount != 3 {
+			t.Errorf("expected 3 categories (preserved), got %d", categoryCount)
+		}
+
+		// Dynamic tables should be reset to seed data
+		var userCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Should be back to the seed data (2 users)
+		if userCount != 2 {
+			t.Errorf("expected 2 users (reset to seed), got %d", userCount)
+		}
+	})
 }

@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 			return nil
 		},
 		ResetFunc: testdbpool.ResetByTruncate(
-			[]string{"comments", "posts", "users"},
+			[]string{}, // truncate all tables
 			func(ctx context.Context, db *sql.DB) error {
 				// Re-execute seed data
 				seed, err := os.ReadFile("sql/seed.sql")

@@ -30,7 +30,7 @@ func TestMaxPoolSizeEnforcement(t *testing.T) {
 		MaxPoolSize:     maxPoolSize,
 		AcquireTimeout:  5 * time.Second,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
@@ -167,7 +167,7 @@ func TestPoolWaitingBehavior(t *testing.T) {
 		MaxPoolSize:     2,
 		AcquireTimeout:  2 * time.Second,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
@@ -243,7 +243,7 @@ func TestRapidAcquireRelease(t *testing.T) {
 		PoolID:          poolID,
 		MaxPoolSize:     2,
 		TemplateCreator: createTestSchema,
-		ResetFunc:       testdbpool.ResetByTruncate([]string{"posts", "users"}, nil),
+		ResetFunc:       testdbpool.ResetByTruncate([]string{}, nil),
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)

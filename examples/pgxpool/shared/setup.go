@@ -123,10 +123,7 @@ func initializePool() error {
 			return err
 		},
 		ResetFunc: testdbpool.ResetByTruncate(
-			[]string{
-				"comments", "posts", "users",
-				"package1_data", "package2_data", "package3_data",
-			},
+			[]string{}, // exclude no tables - truncate all user tables
 			func(ctx context.Context, db *sql.DB) error {
 				// Re-insert common test data
 				_, err := db.ExecContext(ctx, `
