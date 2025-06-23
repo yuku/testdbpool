@@ -122,49 +122,30 @@ func initializePool() error {
 			_, err := db.ExecContext(ctx, schema)
 			return err
 		},
-		ResetFunc: func(ctx context.Context, db *sql.DB) error {
-			// Custom reset function that's more defensive about table existence
-			tables := []string{
+		ResetFunc: testdbpool.ResetByTruncate(
+			[]string{
 				"comments", "posts", "users",
 				"package1_data", "package2_data", "package3_data",
-			}
-			
-			// Truncate tables in order, ignoring missing tables
-			for _, table := range tables {
-				// Check if table exists first
-				var exists bool
-				err := db.QueryRowContext(ctx, 
-					"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1)",
-					table).Scan(&exists)
-				if err != nil {
-					return fmt.Errorf("failed to check table existence for %s: %w", table, err)
-				}
-				
-				if exists {
-					_, err = db.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
-					if err != nil {
-						return fmt.Errorf("failed to truncate table %s: %w", table, err)
-					}
-				}
-			}
-			
-			// Re-insert common test data
-			_, err := db.ExecContext(ctx, `
-				INSERT INTO users (id, name, email) VALUES 
-					(1, 'Alice', 'alice@example.com'),
-					(2, 'Bob', 'bob@example.com'),
-					(3, 'Charlie', 'charlie@example.com');
-				
-				INSERT INTO posts (id, user_id, title, content) VALUES
-					(1, 1, 'First Post', 'Hello World'),
-					(2, 2, 'Second Post', 'Another post'),
-					(3, 1, 'Third Post', 'More content');
+			},
+			func(ctx context.Context, db *sql.DB) error {
+				// Re-insert common test data
+				_, err := db.ExecContext(ctx, `
+					INSERT INTO users (id, name, email) VALUES 
+						(1, 'Alice', 'alice@example.com'),
+						(2, 'Bob', 'bob@example.com'),
+						(3, 'Charlie', 'charlie@example.com');
+					
+					INSERT INTO posts (id, user_id, title, content) VALUES
+						(1, 1, 'First Post', 'Hello World'),
+						(2, 2, 'Second Post', 'Another post'),
+						(3, 1, 'Third Post', 'More content');
 
-				SELECT setval('users_id_seq', 3);
-				SELECT setval('posts_id_seq', 3);
-			`)
-			return err
-		},
+					SELECT setval('users_id_seq', 3);
+					SELECT setval('posts_id_seq', 3);
+				`)
+				return err
+			},
+		),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create pool: %w", err)

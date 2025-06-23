@@ -40,11 +40,27 @@ func ResetByTruncate(tables []string, seedFunc func(ctx context.Context, db *sql
 			return fmt.Errorf("failed to disable foreign key checks: %w", err)
 		}
 
-		// Truncate tables
+		// Check which tables actually exist before truncating
+		var existingTables []string
 		for _, table := range tables {
-			query := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table)
+			var exists bool
+			err := tx.QueryRowContext(ctx,
+				"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public')",
+				table).Scan(&exists)
+			if err != nil {
+				return fmt.Errorf("failed to check table existence for %s: %w", table, err)
+			}
+			if exists {
+				existingTables = append(existingTables, table)
+			}
+		}
+
+		// Truncate all existing tables in one command for better atomicity
+		if len(existingTables) > 0 {
+			tableList := strings.Join(existingTables, ", ")
+			query := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", tableList)
 			if _, err := tx.ExecContext(ctx, query); err != nil {
-				return fmt.Errorf("failed to truncate table %s: %w", table, err)
+				return fmt.Errorf("failed to truncate tables %s: %w", tableList, err)
 			}
 		}
 
