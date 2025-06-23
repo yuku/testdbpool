@@ -2,9 +2,6 @@ package pgxpool_test
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
-	"log"
 	"os"
 	"sync"
 	"testing"
@@ -13,94 +10,19 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/yuku/testdbpool"
+	"github.com/yuku/testdbpool/examples/pgxpool/shared"
 	tpgxpool "github.com/yuku/testdbpool/pgxpool"
 )
 
 var poolWrapper *tpgxpool.Wrapper
 
 func TestMain(m *testing.M) {
-	// Setup PostgreSQL connection for state management
-	dbHost := os.Getenv("DB_HOST")
-	if dbHost == "" {
-		dbHost = "localhost"
-	}
-	dbPort := os.Getenv("DB_PORT")
-	if dbPort == "" {
-		dbPort = "5432"
-	}
-	dbUser := os.Getenv("DB_USER")
-	if dbUser == "" {
-		dbUser = "postgres"
-	}
-	dbPassword := os.Getenv("DB_PASSWORD")
-	if dbPassword == "" {
-		dbPassword = "postgres"
-	}
-
-	rootConnStr := fmt.Sprintf("postgres://%s:%s@%s:%s/postgres?sslmode=disable", dbUser, dbPassword, dbHost, dbPort)
-	rootDB, err := sql.Open("pgx", rootConnStr)
+	// Use shared pool setup to ensure consistency across all packages
+	var err error
+	poolWrapper, err = shared.GetPoolWrapper()
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	defer func() { _ = rootDB.Close() }()
-
-	// Initialize test database pool
-	pool, err := testdbpool.New(testdbpool.Configuration{
-		RootConnection: rootDB,
-		PoolID:         "pgxpool_example",
-		MaxPoolSize:    10,
-		TemplateCreator: func(ctx context.Context, db *sql.DB) error {
-			// Create a simple test schema
-			schema := `
-				CREATE TABLE users (
-					id SERIAL PRIMARY KEY,
-					name VARCHAR(100) NOT NULL,
-					email VARCHAR(100) UNIQUE NOT NULL,
-					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-				);
-
-				CREATE TABLE posts (
-					id SERIAL PRIMARY KEY,
-					user_id INTEGER REFERENCES users(id),
-					title VARCHAR(200) NOT NULL,
-					content TEXT,
-					created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-				);
-
-				-- Insert some test data with explicit IDs
-				INSERT INTO users (id, name, email) VALUES 
-					(1, 'Alice', 'alice@example.com'),
-					(2, 'Bob', 'bob@example.com'),
-					(3, 'Charlie', 'charlie@example.com');
-				
-				-- Reset sequence
-				SELECT setval('users_id_seq', 3);
-			`
-			_, err := db.ExecContext(ctx, schema)
-			return err
-		},
-		ResetFunc: testdbpool.ResetByTruncate(
-			[]string{"posts", "users"},
-			func(ctx context.Context, db *sql.DB) error {
-				// Re-insert test data with explicit IDs
-				_, err := db.ExecContext(ctx, `
-					INSERT INTO users (id, name, email) VALUES 
-						(1, 'Alice', 'alice@example.com'),
-						(2, 'Bob', 'bob@example.com'),
-						(3, 'Charlie', 'charlie@example.com');
-					SELECT setval('users_id_seq', 3);
-				`)
-				return err
-			},
-		),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create wrapper
-	poolWrapper = tpgxpool.New(pool)
 
 	// Run tests
 	os.Exit(m.Run())
@@ -146,10 +68,17 @@ func TestPgxBatchQueries(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Get initial count
+	var initialCount int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM posts").Scan(&initialCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Use pgx batch feature
 	batch := &pgx.Batch{}
-	batch.Queue("INSERT INTO posts (user_id, title, content) VALUES ($1, $2, $3)", 1, "First Post", "Hello World")
-	batch.Queue("INSERT INTO posts (user_id, title, content) VALUES ($1, $2, $3)", 2, "Second Post", "Another post")
+	batch.Queue("INSERT INTO posts (user_id, title, content) VALUES ($1, $2, $3)", 1, "Batch Post 1", "Hello World")
+	batch.Queue("INSERT INTO posts (user_id, title, content) VALUES ($1, $2, $3)", 2, "Batch Post 2", "Another post")
 	batch.Queue("SELECT COUNT(*) FROM posts")
 
 	results := pool.SendBatch(ctx, batch)
@@ -163,14 +92,15 @@ func TestPgxBatchQueries(t *testing.T) {
 		}
 	}
 
-	var count int
-	err = results.QueryRow().Scan(&count)
+	var finalCount int
+	err = results.QueryRow().Scan(&finalCount)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if count != 2 {
-		t.Errorf("expected 2 posts, got %d", count)
+	addedPosts := finalCount - initialCount
+	if addedPosts != 2 {
+		t.Errorf("expected to add 2 posts, added %d (initial: %d, final: %d)", addedPosts, initialCount, finalCount)
 	}
 }
 
@@ -183,11 +113,18 @@ func TestPgxCopyFrom(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Get initial count
+	var initialCount int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM posts").Scan(&initialCount)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Use pgx CopyFrom for bulk inserts
 	rows := [][]any{
-		{1, "Bulk Post 1", "Content 1"},
-		{2, "Bulk Post 2", "Content 2"},
-		{3, "Bulk Post 3", "Content 3"},
+		{1, "Copy Post 1", "Content 1"},
+		{2, "Copy Post 2", "Content 2"},
+		{3, "Copy Post 3", "Content 3"},
 	}
 
 	copyCount, err := pool.CopyFrom(
@@ -204,14 +141,16 @@ func TestPgxCopyFrom(t *testing.T) {
 		t.Errorf("expected to copy 3 rows, got %d", copyCount)
 	}
 
-	// Verify
-	var count int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM posts").Scan(&count)
+	// Verify final count increased correctly
+	var finalCount int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM posts").Scan(&finalCount)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 3 {
-		t.Errorf("expected 3 posts, got %d", count)
+	
+	addedPosts := finalCount - initialCount
+	if addedPosts != 3 {
+		t.Errorf("expected to add 3 posts, added %d (initial: %d, final: %d)", addedPosts, initialCount, finalCount)
 	}
 }
 
