@@ -6,9 +6,19 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      contents: read
     strategy:
       matrix:
         postgres-version: ['14', '15', '16']
