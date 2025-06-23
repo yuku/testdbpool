@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (pgx)
+	_ "github.com/lib/pq"              // PostgreSQL driver (lib/pq)
 	"github.com/yuku/testdbpool"
 )
 

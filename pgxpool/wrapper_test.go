@@ -266,12 +266,26 @@ func TestHostSources(t *testing.T) {
 }
 
 func TestCustomConfiguration(t *testing.T) {
+	// Get proper host from environment
+	dbHost := os.Getenv("DB_HOST")
+	if dbHost == "" {
+		dbHost = "localhost"
+	}
+	dbPort := os.Getenv("DB_PORT")
+	if dbPort == "" {
+		dbPort = "5432"
+	}
+	dbPassword := os.Getenv("DB_PASSWORD")
+	if dbPassword == "" {
+		dbPassword = "postgres"
+	}
+	
 	// Create wrapper with custom configuration
 	customWrapper := tpgxpool.NewWithConfig(testPool, tpgxpool.Config{
-		PasswordSource: tpgxpool.StaticPasswordSource("postgres"),
+		PasswordSource: tpgxpool.StaticPasswordSource(dbPassword),
 		HostSource: func(db *sql.DB) (string, string, error) {
-			// Always return specific host/port
-			return "db", "5432", nil
+			// Return proper host/port from environment
+			return dbHost, dbPort, nil
 		},
 		AdditionalParams: "application_name=test_app&statement_timeout=30000",
 	})
