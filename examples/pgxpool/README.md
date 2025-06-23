@@ -104,8 +104,6 @@ The example includes multiple packages to demonstrate pool sharing:
 
 Run all packages in parallel:
 ```bash
-./test_parallel.sh
-# or
 go test -v ./...
 ```
 
@@ -124,7 +122,6 @@ examples/pgxpool/
 ├── package3/         # JSON operations tests
 │   └── json_test.go
 ├── main_test.go      # Original single-package tests
-├── test_parallel.sh  # Script to run all tests in parallel
 └── README.md
 ```
 
