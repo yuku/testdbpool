@@ -20,16 +20,16 @@ func main() {
 		{
 			name: "Concurrent package execution",
 			packages: []string{
-				"./examples/pgxpool/package1",
-				"./examples/pgxpool/package2",
-				"./examples/pgxpool/package3",
+				"./package1",
+				"./package2",
+				"./package3",
 			},
 			parallel: 3,
 		},
 		{
 			name: "Rapid sequential execution",
 			packages: []string{
-				"./examples/pgxpool/...",
+				"./...",
 			},
 			parallel: 1,
 		},
@@ -59,6 +59,8 @@ func runScenario(packages []string, parallel int) {
 				cmd.Env = append(os.Environ(),
 					fmt.Sprintf("TEST_ITERATION=%d", iteration),
 				)
+				// Run from the examples/pgxpool directory
+				cmd.Dir = "./examples/pgxpool"
 
 				output, err := cmd.CombinedOutput()
 				if err != nil {
