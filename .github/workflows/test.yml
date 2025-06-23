@@ -6,16 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  GO_VERSION: '1.21'
-
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         postgres-version: ['13', '14', '15', '16']
-        test-directory: ['.', './examples/sqlc', './examples/pgxpool']
     
     services:
       postgres:
@@ -38,7 +34,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ env.GO_VERSION }}
+        go-version-file: go.mod
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -51,11 +47,9 @@ jobs:
           ${{ runner.os }}-go-
 
     - name: Install dependencies
-      working-directory: ${{ matrix.test-directory }}
       run: go mod download
 
-    - name: Run tests
-      working-directory: ${{ matrix.test-directory }}
+    - name: Run main tests
       env:
         PGHOST: localhost
         PGPORT: 5432
@@ -67,14 +61,42 @@ jobs:
         DB_USER: postgres
         DB_PASSWORD: postgres
       run: |
-        if [ "${{ matrix.test-directory }}" = "." ]; then
-          go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-        else
-          go test -v -race ./...
-        fi
+        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Test sqlc example
+      env:
+        PGHOST: localhost
+        PGPORT: 5432
+        PGUSER: postgres
+        PGPASSWORD: postgres
+        PGSSLMODE: disable
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+      run: |
+        cd examples/sqlc
+        go mod download
+        go test -v -race ./...
+
+    - name: Test pgxpool example
+      env:
+        PGHOST: localhost
+        PGPORT: 5432
+        PGUSER: postgres
+        PGPASSWORD: postgres
+        PGSSLMODE: disable
+        DB_HOST: localhost
+        DB_PORT: 5432
+        DB_USER: postgres
+        DB_PASSWORD: postgres
+      run: |
+        cd examples/pgxpool
+        go mod download
+        go test -v -race ./...
 
     - name: Upload coverage to Codecov
-      if: matrix.test-directory == '.' && matrix.postgres-version == '16'
+      if: matrix.postgres-version == '16'
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.txt
@@ -89,7 +111,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ env.GO_VERSION }}
+        go-version-file: go.mod
 
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v6
