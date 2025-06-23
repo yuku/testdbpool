@@ -1,0 +1,37 @@
+#!/bin/sh
+# Pre-commit hook to run go fmt and golangci-lint before committing
+
+echo "Running pre-commit checks..."
+
+# Check if go is available
+if ! command -v go >/dev/null 2>&1; then
+    echo "Error: go is not installed or not in PATH"
+    exit 1
+fi
+
+# Run go fmt
+echo "Running go fmt..."
+FILES=$(go fmt ./...)
+if [ -n "$FILES" ]; then
+    echo "Error: The following files need formatting:"
+    echo "$FILES"
+    echo "Please run 'go fmt ./...' before committing"
+    exit 1
+fi
+
+# Check if golangci-lint is available
+if ! command -v golangci-lint >/dev/null 2>&1; then
+    echo "Warning: golangci-lint is not installed"
+    echo "Install it with: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin"
+    echo "Skipping golangci-lint check..."
+else
+    # Run golangci-lint
+    echo "Running golangci-lint..."
+    if ! golangci-lint run --timeout=5m; then
+        echo "Error: golangci-lint found issues"
+        echo "Please fix the issues before committing"
+        exit 1
+    fi
+fi
+
+echo "Pre-commit checks passed!"
