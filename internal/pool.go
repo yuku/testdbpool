@@ -140,22 +140,40 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 			}
 
 			if !exists {
-				// Create template database
-				createQuery := fmt.Sprintf("CREATE DATABASE %s", templateDB)
-				if _, err := p.Config.RootConnection.ExecContext(ctx, createQuery); err != nil {
-					return fmt.Errorf("failed to create template database: %w", err)
-				}
+				// Create template database with advisory lock protection
+				createLock := NewAdvisoryLock(p.Config.RootConnection, "template_db_create_"+templateDB)
+				err := createLock.WithLock(ctx, func() error {
+					// Double-check existence inside the lock
+					exists2, err := DatabaseExists(ctx, p.Config.RootConnection, templateDB)
+					if err != nil {
+						return fmt.Errorf("failed to recheck template database existence: %w", err)
+					}
+					if exists2 {
+						return nil // Another process created it
+					}
 
-				// Connect to template database and run template creator
-				templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
-				templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
+					// Create template database
+					createQuery := fmt.Sprintf("CREATE DATABASE %s", templateDB)
+					if _, err := p.Config.RootConnection.ExecContext(ctx, createQuery); err != nil {
+						return fmt.Errorf("failed to create template database: %w", err)
+					}
+
+					// Connect to template database and run template creator
+					templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
+					templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
+					if err != nil {
+						return fmt.Errorf("failed to connect to template database: %w", err)
+					}
+					defer func() { _ = templateConn.Close() }()
+
+					if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
+						return fmt.Errorf("failed to execute template creator: %w", err)
+					}
+
+					return nil
+				})
 				if err != nil {
-					return fmt.Errorf("failed to connect to template database: %w", err)
-				}
-				defer func() { _ = templateConn.Close() }()
-
-				if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
-					return fmt.Errorf("failed to execute template creator: %w", err)
+					return err
 				}
 			}
 
