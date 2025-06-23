@@ -62,7 +62,7 @@ jobs:
 
     - name: Run main tests
       run: |
-        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        go test -v -race ./...
 
     - name: Test sqlc example
       run: |
