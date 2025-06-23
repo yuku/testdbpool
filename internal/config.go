@@ -1,4 +1,4 @@
-package testdbpool
+package internal
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-var poolIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+var PoolIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
-// validateConfig validates the configuration and applies defaults
-func validateConfig(config *Configuration) error {
+// ValidateConfig validates the configuration and applies defaults
+func ValidateConfig(config *Configuration) error {
 	if config.RootConnection == nil {
 		return fmt.Errorf("RootConnection must not be nil")
 	}
@@ -23,7 +23,7 @@ func validateConfig(config *Configuration) error {
 		return fmt.Errorf("PoolID must be 50 characters or less")
 	}
 
-	if !poolIDRegex.MatchString(config.PoolID) {
+	if !PoolIDRegex.MatchString(config.PoolID) {
 		return fmt.Errorf("PoolID must contain only alphanumeric characters and underscores")
 	}
 

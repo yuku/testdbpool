@@ -1,4 +1,4 @@
-package testdbpool
+package internal
 
 import (
 	"context"
@@ -8,20 +8,20 @@ import (
 	"time"
 )
 
-// poolState represents a row in the testdbpool_state table
-type poolState struct {
-	poolID        string
-	templateDB    string
-	availableDBs  []string
-	inUseDBs      []string
-	failedDBs     []string
-	maxPoolSize   int
-	createdAt     time.Time
-	lastAccessed  time.Time
+// PoolState represents a row in the testdbpool_state table
+type PoolState struct {
+	PoolID        string
+	TemplateDB    string
+	AvailableDBs  []string
+	InUseDBs      []string
+	FailedDBs     []string
+	MaxPoolSize   int
+	CreatedAt     time.Time
+	LastAccessed  time.Time
 }
 
-// createStateTable creates the pool state management table if it doesn't exist
-func createStateTable(ctx context.Context, db *sql.DB) error {
+// CreateStateTable creates the pool state management table if it doesn't exist
+func CreateStateTable(ctx context.Context, db *sql.DB) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS testdbpool_state (
 		pool_id VARCHAR PRIMARY KEY,
@@ -38,8 +38,8 @@ func createStateTable(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
-// getPoolState retrieves the pool state for the given pool ID
-func getPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*poolState, error) {
+// GetPoolState retrieves the pool state for the given pool ID
+func GetPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*PoolState, error) {
 	query := `
 	SELECT pool_id, template_db, available_dbs, in_use_dbs, failed_dbs, 
 	       max_pool_size, created_at, last_accessed
@@ -47,18 +47,18 @@ func getPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*poolState, e
 	WHERE pool_id = $1
 	FOR UPDATE`
 	
-	var state poolState
+	var state PoolState
 	var availableDBs, inUseDBs, failedDBs string
 	
 	err := tx.QueryRowContext(ctx, query, poolID).Scan(
-		&state.poolID,
-		&state.templateDB,
+		&state.PoolID,
+		&state.TemplateDB,
 		&availableDBs,
 		&inUseDBs,
 		&failedDBs,
-		&state.maxPoolSize,
-		&state.createdAt,
-		&state.lastAccessed,
+		&state.MaxPoolSize,
+		&state.CreatedAt,
+		&state.LastAccessed,
 	)
 	
 	if err == sql.ErrNoRows {
@@ -69,15 +69,15 @@ func getPoolState(ctx context.Context, tx *sql.Tx, poolID string) (*poolState, e
 	}
 	
 	// Parse PostgreSQL arrays
-	state.availableDBs = parsePostgresArray(availableDBs)
-	state.inUseDBs = parsePostgresArray(inUseDBs)
-	state.failedDBs = parsePostgresArray(failedDBs)
+	state.AvailableDBs = parsePostgresArray(availableDBs)
+	state.InUseDBs = parsePostgresArray(inUseDBs)
+	state.FailedDBs = parsePostgresArray(failedDBs)
 	
 	return &state, nil
 }
 
-// insertPoolState creates a new pool state record
-func insertPoolState(ctx context.Context, tx *sql.Tx, poolID string, maxPoolSize int) error {
+// InsertPoolState creates a new pool state record
+func InsertPoolState(ctx context.Context, tx *sql.Tx, poolID string, maxPoolSize int) error {
 	templateDB := fmt.Sprintf("%s_template", poolID)
 	query := `
 	INSERT INTO testdbpool_state (pool_id, template_db, max_pool_size)
@@ -87,8 +87,8 @@ func insertPoolState(ctx context.Context, tx *sql.Tx, poolID string, maxPoolSize
 	return err
 }
 
-// updatePoolState updates the pool state arrays
-func updatePoolState(ctx context.Context, tx *sql.Tx, state *poolState) error {
+// UpdatePoolState updates the pool state arrays
+func UpdatePoolState(ctx context.Context, tx *sql.Tx, state *PoolState) error {
 	query := `
 	UPDATE testdbpool_state
 	SET available_dbs = $1,
@@ -97,11 +97,11 @@ func updatePoolState(ctx context.Context, tx *sql.Tx, state *poolState) error {
 	    last_accessed = NOW()
 	WHERE pool_id = $4`
 	
-	availableDBs := formatPostgresArray(state.availableDBs)
-	inUseDBs := formatPostgresArray(state.inUseDBs)
-	failedDBs := formatPostgresArray(state.failedDBs)
+	availableDBs := formatPostgresArray(state.AvailableDBs)
+	inUseDBs := formatPostgresArray(state.InUseDBs)
+	failedDBs := formatPostgresArray(state.FailedDBs)
 	
-	_, err := tx.ExecContext(ctx, query, availableDBs, inUseDBs, failedDBs, state.poolID)
+	_, err := tx.ExecContext(ctx, query, availableDBs, inUseDBs, failedDBs, state.PoolID)
 	return err
 }
 
@@ -123,8 +123,8 @@ func formatPostgresArray(arr []string) string {
 	return "{" + strings.Join(arr, ",") + "}"
 }
 
-// removeFromSlice removes an element from a slice
-func removeFromSlice(slice []string, elem string) []string {
+// RemoveFromSlice removes an element from a slice
+func RemoveFromSlice(slice []string, elem string) []string {
 	result := make([]string, 0, len(slice))
 	for _, s := range slice {
 		if s != elem {
@@ -134,8 +134,8 @@ func removeFromSlice(slice []string, elem string) []string {
 	return result
 }
 
-// databaseExists checks if a database exists
-func databaseExists(ctx context.Context, db *sql.DB, dbName string) (bool, error) {
+// DatabaseExists checks if a database exists
+func DatabaseExists(ctx context.Context, db *sql.DB, dbName string) (bool, error) {
 	query := `SELECT 1 FROM pg_database WHERE datname = $1`
 	var exists int
 	err := db.QueryRowContext(ctx, query, dbName).Scan(&exists)
@@ -148,10 +148,10 @@ func databaseExists(ctx context.Context, db *sql.DB, dbName string) (bool, error
 	return true, nil
 }
 
-// createDatabase creates a new database from template
-func createDatabase(ctx context.Context, db *sql.DB, dbName, templateName string) error {
+// CreateDatabase creates a new database from template
+func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string) error {
 	// SQL injection protection: validate database names
-	if !poolIDRegex.MatchString(dbName) || !poolIDRegex.MatchString(templateName) {
+	if !PoolIDRegex.MatchString(dbName) || !PoolIDRegex.MatchString(templateName) {
 		return fmt.Errorf("invalid database name")
 	}
 	
@@ -160,10 +160,10 @@ func createDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 	return err
 }
 
-// dropDatabase drops a database
-func dropDatabase(ctx context.Context, db *sql.DB, dbName string) error {
+// DropDatabase drops a database
+func DropDatabase(ctx context.Context, db *sql.DB, dbName string) error {
 	// SQL injection protection: validate database name
-	if !poolIDRegex.MatchString(dbName) {
+	if !PoolIDRegex.MatchString(dbName) {
 		return fmt.Errorf("invalid database name")
 	}
 	

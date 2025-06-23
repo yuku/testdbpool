@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+
+	"github.com/yuku/testdbpool/internal"
 )
 
 // Cleanup manually cleans up all databases and state for a pool
@@ -12,12 +14,12 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	ctx := context.Background()
 
 	// Validate pool ID
-	if !poolIDRegex.MatchString(poolID) {
+	if !internal.PoolIDRegex.MatchString(poolID) {
 		return fmt.Errorf("invalid pool ID: %s", poolID)
 	}
 
 	// Connect to state database
-	stateDB, err := sql.Open("postgres", getConnectionString(rootDB, "postgres"))
+	stateDB, err := sql.Open("postgres", internal.GetConnectionString(rootDB, "postgres"))
 	if err != nil {
 		return fmt.Errorf("failed to connect to state database: %w", err)
 	}
@@ -30,7 +32,7 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	}
 	defer tx.Rollback()
 
-	state, err := getPoolState(ctx, tx, poolID)
+	state, err := internal.GetPoolState(ctx, tx, poolID)
 	if err != nil {
 		return fmt.Errorf("failed to get pool state: %w", err)
 	}
@@ -44,12 +46,12 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	var databasesToDelete []string
 
 	// Add template database
-	databasesToDelete = append(databasesToDelete, state.templateDB)
+	databasesToDelete = append(databasesToDelete, state.TemplateDB)
 
 	// Add all pool databases
-	databasesToDelete = append(databasesToDelete, state.availableDBs...)
-	databasesToDelete = append(databasesToDelete, state.inUseDBs...)
-	databasesToDelete = append(databasesToDelete, state.failedDBs...)
+	databasesToDelete = append(databasesToDelete, state.AvailableDBs...)
+	databasesToDelete = append(databasesToDelete, state.InUseDBs...)
+	databasesToDelete = append(databasesToDelete, state.FailedDBs...)
 
 	// Delete pool state record
 	deleteQuery := "DELETE FROM testdbpool_state WHERE pool_id = $1"
@@ -65,7 +67,7 @@ func Cleanup(rootDB *sql.DB, poolID string) error {
 	// Drop all databases
 	var errors []error
 	for _, dbName := range databasesToDelete {
-		if err := dropDatabase(ctx, rootDB, dbName); err != nil {
+		if err := internal.DropDatabase(ctx, rootDB, dbName); err != nil {
 			log.Printf("failed to drop database %s: %v", dbName, err)
 			errors = append(errors, fmt.Errorf("failed to drop database %s: %w", dbName, err))
 		}

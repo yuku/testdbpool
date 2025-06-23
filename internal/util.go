@@ -1,4 +1,4 @@
-package testdbpool
+package internal
 
 import (
 	"database/sql"
@@ -7,17 +7,17 @@ import (
 	"strings"
 )
 
-// getConnectionString creates a connection string for the given database name
+// GetConnectionString creates a connection string for the given database name
 // Since sql.DB doesn't expose the original connection string, this uses
 // environment variables or defaults
-func getConnectionString(db *sql.DB, dbName string) string {
+func GetConnectionString(db *sql.DB, dbName string) string {
 	// In a real implementation, you'd pass the connection string through config
 	// For testing, we'll use localhost defaults
-	host := getEnvOrDefault("PGHOST", "localhost")
-	port := getEnvOrDefault("PGPORT", "5432")
-	user := getEnvOrDefault("PGUSER", "postgres")
-	password := getEnvOrDefault("PGPASSWORD", "postgres")
-	sslmode := getEnvOrDefault("PGSSLMODE", "disable")
+	host := GetEnvOrDefault("PGHOST", "localhost")
+	port := GetEnvOrDefault("PGPORT", "5432")
+	user := GetEnvOrDefault("PGUSER", "postgres")
+	password := GetEnvOrDefault("PGPASSWORD", "postgres")
+	sslmode := GetEnvOrDefault("PGSSLMODE", "disable")
 
 	if password != "" {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
@@ -27,8 +27,8 @@ func getConnectionString(db *sql.DB, dbName string) string {
 		user, host, port, dbName, sslmode)
 }
 
-// getEnvOrDefault gets an environment variable or returns a default value
-func getEnvOrDefault(key, defaultValue string) string {
+// GetEnvOrDefault gets an environment variable or returns a default value
+func GetEnvOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
