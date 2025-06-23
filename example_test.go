@@ -18,15 +18,30 @@ var examplePool *testdbpool.Pool
 
 func TestMain(m *testing.M) {
 	// Connect to PostgreSQL
-	connStr := "postgres://postgres:postgres@localhost/postgres?sslmode=disable"
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "localhost"
+	}
+	user := os.Getenv("PGUSER")
+	if user == "" {
+		user = "postgres"
+	}
+	password := os.Getenv("PGPASSWORD")
+	if password == "" {
+		password = "postgres"
+	}
+	
+	connStr := fmt.Sprintf("postgres://%s:%s@%s/postgres?sslmode=disable", user, password, host)
 	rootDB, err := sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatalf("Failed to connect to PostgreSQL: %v", err)
 	}
 	defer rootDB.Close()
 
-	// Optional: Clean up any existing pool
-	testdbpool.Cleanup(rootDB, "example_test")
+	// Always clean up any existing pool before tests
+	if err := testdbpool.Cleanup(rootDB, "example_test"); err != nil {
+		log.Printf("Failed to cleanup existing pool: %v", err)
+	}
 
 	// Create the pool
 	examplePool, err = testdbpool.New(testdbpool.Configuration{
@@ -84,8 +99,10 @@ func TestMain(m *testing.M) {
 	// Run tests
 	code := m.Run()
 
-	// Clean up (optional - you might want to keep the pool for next run)
-	testdbpool.Cleanup(rootDB, "example_test")
+	// Always clean up after tests
+	if err := testdbpool.Cleanup(rootDB, "example_test"); err != nil {
+		log.Printf("Failed to cleanup pool after tests: %v", err)
+	}
 
 	os.Exit(code)
 }

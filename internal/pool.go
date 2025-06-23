@@ -135,14 +135,19 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 
 			// Connect to template database and run template creator
 			templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
-			templateDB, err := sql.Open("postgres", templateConnStr)
+			templateConn, err := sql.Open("postgres", templateConnStr)
 			if err != nil {
 				return nil, fmt.Errorf("failed to connect to template database: %w", err)
 			}
-			defer templateDB.Close()
 
-			if err := p.Config.TemplateCreator(ctx, templateDB); err != nil {
+			if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
+				templateConn.Close()
 				return nil, fmt.Errorf("failed to execute template creator: %w", err)
+			}
+			
+			// Close the connection to ensure template can be used
+			if err := templateConn.Close(); err != nil {
+				return nil, fmt.Errorf("failed to close template database connection: %w", err)
 			}
 		}
 

@@ -155,6 +155,16 @@ func CreateDatabase(ctx context.Context, db *sql.DB, dbName, templateName string
 		return fmt.Errorf("invalid database name")
 	}
 	
+	// First, ensure no active connections to template database
+	terminateQuery := fmt.Sprintf(`
+		SELECT pg_terminate_backend(pid) 
+		FROM pg_stat_activity 
+		WHERE datname = '%s' AND pid <> pg_backend_pid()`, templateName)
+	db.ExecContext(ctx, terminateQuery)
+	
+	// Small delay to ensure connections are terminated
+	time.Sleep(100 * time.Millisecond)
+	
 	query := fmt.Sprintf("CREATE DATABASE %s WITH TEMPLATE %s", dbName, templateName)
 	_, err := db.ExecContext(ctx, query)
 	return err
@@ -167,19 +177,18 @@ func DropDatabase(ctx context.Context, db *sql.DB, dbName string) error {
 		return fmt.Errorf("invalid database name")
 	}
 	
-	// Check for active connections
-	var count int
-	checkQuery := `SELECT COUNT(*) FROM pg_stat_activity WHERE datname = $1`
-	err := db.QueryRowContext(ctx, checkQuery, dbName).Scan(&count)
-	if err != nil {
-		return err
-	}
+	// First, terminate all connections to the database
+	terminateQuery := `
+		SELECT pg_terminate_backend(pid) 
+		FROM pg_stat_activity 
+		WHERE datname = $1 AND pid <> pg_backend_pid()`
+	db.ExecContext(ctx, terminateQuery, dbName)
 	
-	if count > 0 {
-		return fmt.Errorf("database %s has active connections", dbName)
-	}
+	// Small delay to ensure connections are terminated
+	time.Sleep(100 * time.Millisecond)
 	
+	// Drop the database
 	query := fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName)
-	_, err = db.ExecContext(ctx, query)
+	_, err := db.ExecContext(ctx, query)
 	return err
 }

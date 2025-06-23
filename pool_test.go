@@ -291,9 +291,12 @@ func TestConcurrentAcquire(t *testing.T) {
 	
 	defer testdbpool.Cleanup(rootDB, poolID)
 	
-	// Run multiple tests concurrently
+	// Run tests to verify concurrent access
+	// Since databases are released when sub-tests complete, we may get more than 5 successes
+	// The key is to verify that the pool properly handles concurrent access
 	var wg sync.WaitGroup
-	errors := make(chan error, 10)
+	successCount := 0
+	var mu sync.Mutex
 	
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
@@ -305,18 +308,25 @@ func TestConcurrentAcquire(t *testing.T) {
 			t.Run(testName, func(t *testing.T) {
 				db, err := pool.Acquire(t)
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to acquire: %w", i, err)
+					// Pool exhaustion is expected and not an error
+					if !containsString(err.Error(), "pool exhausted") {
+						t.Errorf("goroutine %d: unexpected error: %v", i, err)
+					}
 					return
 				}
 				
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+				
 				// Simulate some work
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 				
 				// Verify we can use the database
 				var result int
 				err = db.QueryRow("SELECT 1").Scan(&result)
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to query: %w", i, err)
+					t.Errorf("goroutine %d: failed to query: %v", i, err)
 					return
 				}
 			})
@@ -324,11 +334,10 @@ func TestConcurrentAcquire(t *testing.T) {
 	}
 	
 	wg.Wait()
-	close(errors)
 	
-	// Check for errors
-	for err := range errors {
-		t.Error(err)
+	// Verify that we got at least 5 successful acquisitions (pool size)
+	if successCount < 5 {
+		t.Errorf("expected at least 5 successful acquisitions, got %d", successCount)
 	}
 }
 
@@ -355,45 +364,56 @@ func TestPoolExhaustion(t *testing.T) {
 	
 	defer testdbpool.Cleanup(rootDB, poolID)
 	
-	// Acquire all available databases
-	t.Run("acquire_first", func(t *testing.T) {
-		_, err := pool.Acquire(t)
+	// Use a WaitGroup to ensure databases are held
+	var wg sync.WaitGroup
+	wg.Add(2)
+	
+	go func() {
+		defer wg.Done()
+		db, err := pool.Acquire(t)
 		if err != nil {
 			t.Errorf("failed to acquire first database: %v", err)
+			return
 		}
-	})
+		// Verify connection works
+		var result int
+		if err := db.QueryRow("SELECT 1").Scan(&result); err != nil {
+			t.Errorf("failed to query first database: %v", err)
+		}
+		// Hold the database until test is done
+		time.Sleep(1 * time.Second)
+	}()
 	
-	t.Run("acquire_second", func(t *testing.T) {
-		_, err := pool.Acquire(t)
+	go func() {
+		defer wg.Done()
+		db, err := pool.Acquire(t)
 		if err != nil {
 			t.Errorf("failed to acquire second database: %v", err)
+			return
 		}
-	})
+		// Verify connection works
+		var result int
+		if err := db.QueryRow("SELECT 1").Scan(&result); err != nil {
+			t.Errorf("failed to query second database: %v", err)
+		}
+		// Hold the database until test is done
+		time.Sleep(1 * time.Second)
+	}()
 	
-	// Try to acquire one more (should fail)
-	t.Run("acquire_exhausted", func(t *testing.T) {
-		// Set a short deadline for this test
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		
-		done := make(chan struct{})
-		go func() {
-			_, err := pool.Acquire(t)
-			if err == nil {
-				t.Error("expected error when pool exhausted, got nil")
-			} else if !containsString(err.Error(), "pool exhausted") {
-				t.Errorf("expected pool exhausted error, got: %v", err)
-			}
-			close(done)
-		}()
-		
-		select {
-		case <-done:
-			// Test completed
-		case <-ctx.Done():
-			t.Error("test timed out waiting for pool exhaustion error")
-		}
-	})
+	// Wait a bit to ensure both databases are acquired
+	time.Sleep(200 * time.Millisecond)
+	
+	// Now the pool should be exhausted
+	// Try to acquire one more (should fail immediately)
+	_, err = pool.Acquire(t)
+	if err == nil {
+		t.Error("expected error when pool exhausted, got nil")
+	} else if !containsString(err.Error(), "pool exhausted") {
+		t.Errorf("expected pool exhausted error, got: %v", err)
+	}
+	
+	// Wait for goroutines to finish
+	wg.Wait()
 }
 
 func TestCleanup(t *testing.T) {
