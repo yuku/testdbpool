@@ -44,7 +44,16 @@ func GetDriverName(db *sql.DB) string {
 		return driver
 	}
 
-	// For PostgreSQL, we support both "postgres" (lib/pq) and "pgx" drivers
-	// We'll try pgx first since it's imported, and fall back to postgres
-	return "pgx"
+	// Try to detect which driver is available by checking registered drivers
+	for _, driver := range sql.Drivers() {
+		switch driver {
+		case "pgx":
+			return "pgx"
+		case "postgres":
+			return "postgres"
+		}
+	}
+
+	// Default to postgres (lib/pq) as it's more commonly used
+	return "postgres"
 }

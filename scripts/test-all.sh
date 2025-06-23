@@ -69,6 +69,9 @@ run_tests "$ORIGINAL_DIR/examples/pgxpool" "PgxPool examples"
 # Run sqlc example tests
 run_tests "$ORIGINAL_DIR/examples/sqlc" "SQLC examples"
 
+# Run multiple-packages example tests
+run_tests "$ORIGINAL_DIR/examples/multiple-packages" "Multiple packages examples"
+
 # Return to original directory
 cd "$ORIGINAL_DIR"
 
