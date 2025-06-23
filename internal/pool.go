@@ -91,10 +91,18 @@ func New(config Configuration) (*Pool, error) {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	// Check if template database actually exists
+	templateDB := fmt.Sprintf("%s_template", config.PoolID)
+	templateExists, err := DatabaseExists(ctx, config.RootConnection, templateDB)
+	if err != nil {
+		_ = stateDB.Close()
+		return nil, fmt.Errorf("failed to check template database existence: %w", err)
+	}
+
 	return &Pool{
 		Config:         config,
 		StateDB:        stateDB,
-		TemplateExists: state != nil,
+		TemplateExists: templateExists,
 	}, nil
 }
 
