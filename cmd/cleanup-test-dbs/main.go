@@ -35,6 +35,7 @@ func main() {
 	// List of pool IDs used in tests
 	poolIDs := []string{
 		"example_test",
+		"blog_api_test",
 		"test_pool_1",
 		"test_pool_2",
 		"test_pool_3",
