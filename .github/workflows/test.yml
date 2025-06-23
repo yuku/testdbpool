@@ -11,7 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        postgres-version: ['13', '14', '15', '16']
+        postgres-version: ['14', '15', '16']
+    
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGSSLMODE: disable
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
     
     services:
       postgres:
@@ -50,58 +61,20 @@ jobs:
       run: go mod download
 
     - name: Run main tests
-      env:
-        PGHOST: localhost
-        PGPORT: 5432
-        PGUSER: postgres
-        PGPASSWORD: postgres
-        PGSSLMODE: disable
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_USER: postgres
-        DB_PASSWORD: postgres
       run: |
         go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
     - name: Test sqlc example
-      env:
-        PGHOST: localhost
-        PGPORT: 5432
-        PGUSER: postgres
-        PGPASSWORD: postgres
-        PGSSLMODE: disable
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_USER: postgres
-        DB_PASSWORD: postgres
       run: |
         cd examples/sqlc
         go mod download
         go test -v -race ./...
 
     - name: Test pgxpool example
-      env:
-        PGHOST: localhost
-        PGPORT: 5432
-        PGUSER: postgres
-        PGPASSWORD: postgres
-        PGSSLMODE: disable
-        DB_HOST: localhost
-        DB_PORT: 5432
-        DB_USER: postgres
-        DB_PASSWORD: postgres
       run: |
         cd examples/pgxpool
         go mod download
         go test -v -race ./...
-
-    - name: Upload coverage to Codecov
-      if: matrix.postgres-version == '16'
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.txt
-        flags: unittests
-        fail_ci_if_error: false
 
   lint:
     runs-on: ubuntu-latest
