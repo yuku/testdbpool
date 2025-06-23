@@ -153,6 +153,10 @@ Deletion Rules:
 - Reliable exclusive control via PostgreSQL transactions + `FOR UPDATE`
 - Support simultaneous initialization, Acquire/Release calls across multiple processes
 - Timeout settings for deadlock avoidance
+- PostgreSQL advisory locks for critical operations:
+  - Template database creation uses session-level advisory locks to prevent duplicate creation attempts
+  - Pool state operations use transaction-scoped advisory locks for additional safety
+  - Advisory lock IDs are generated using FNV-1a hash of operation identifiers
 
 ## Implementation Requirements
 
@@ -376,6 +380,9 @@ func TestUserRepository(t *testing.T) {
 - Manual cleanup required (no automatic deletion)
 - Uses PostgreSQL transactions for inter-process communication (slight overhead)
 - PoolID limited to alphanumeric and underscore characters, max 50 characters
+- Uses PostgreSQL advisory locks to prevent race conditions:
+  - Session-level advisory locks for template database creation
+  - Transaction-scoped advisory locks for pool state operations
 
 ## Development Guidelines
 

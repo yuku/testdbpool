@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,6 +15,7 @@ type Pool struct {
 	Config         Configuration
 	StateDB        *sql.DB
 	TemplateExists bool
+	mu             sync.RWMutex // Protects TemplateExists
 }
 
 // Configuration holds pool initialization settings
@@ -103,47 +104,52 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 	defer cancel()
 
 	// Create template database on first acquire (before transaction)
-	if !p.TemplateExists {
-		// We need to check if template exists first
-		// This is done outside transaction since CREATE DATABASE cannot run in a transaction
-		templateDB := fmt.Sprintf("%s_template", p.Config.PoolID)
-		exists, err := DatabaseExists(ctx, p.Config.RootConnection, templateDB)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check template database existence: %w", err)
-		}
+	p.mu.RLock()
+	templateExists := p.TemplateExists
+	p.mu.RUnlock()
 
-		if !exists {
-			// Create template database
-			createQuery := fmt.Sprintf("CREATE DATABASE %s", templateDB)
-			if _, err := p.Config.RootConnection.ExecContext(ctx, createQuery); err != nil {
-				// Check if the error is because the database already exists (race condition)
-				if !strings.Contains(err.Error(), "already exists") && !strings.Contains(err.Error(), "duplicate key") {
-					return nil, fmt.Errorf("failed to create template database: %w", err)
+	if !templateExists {
+		templateDB := fmt.Sprintf("%s_template", p.Config.PoolID)
+
+		// Use advisory lock to prevent concurrent template creation
+		templateLock := NewAdvisoryLock(p.Config.RootConnection, "template_create_"+p.Config.PoolID)
+		err := templateLock.WithLock(ctx, func() error {
+			// Double-check template existence inside the lock
+			exists, err := DatabaseExists(ctx, p.Config.RootConnection, templateDB)
+			if err != nil {
+				return fmt.Errorf("failed to check template database existence: %w", err)
+			}
+
+			if !exists {
+				// Create template database
+				createQuery := fmt.Sprintf("CREATE DATABASE %s", templateDB)
+				if _, err := p.Config.RootConnection.ExecContext(ctx, createQuery); err != nil {
+					return fmt.Errorf("failed to create template database: %w", err)
 				}
-				// If database already exists, wait a bit and continue
-				time.Sleep(100 * time.Millisecond)
-			} else {
-				// Only run template creator if we actually created the database
+
 				// Connect to template database and run template creator
 				templateConnStr := GetConnectionString(p.Config.RootConnection, templateDB)
 				templateConn, err := sql.Open(GetDriverName(p.Config.RootConnection), templateConnStr)
 				if err != nil {
-					return nil, fmt.Errorf("failed to connect to template database: %w", err)
+					return fmt.Errorf("failed to connect to template database: %w", err)
 				}
+				defer func() { _ = templateConn.Close() }()
 
 				if err := p.Config.TemplateCreator(ctx, templateConn); err != nil {
-					_ = templateConn.Close()
-					return nil, fmt.Errorf("failed to execute template creator: %w", err)
-				}
-
-				// Close the connection to ensure template can be used
-				if err := templateConn.Close(); err != nil {
-					return nil, fmt.Errorf("failed to close template database connection: %w", err)
+					return fmt.Errorf("failed to execute template creator: %w", err)
 				}
 			}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
 		}
 
+		p.mu.Lock()
 		p.TemplateExists = true
+		p.mu.Unlock()
 	}
 
 	// Start transaction with timeout
@@ -152,6 +158,12 @@ func (p *Pool) Acquire(t *testing.T) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Acquire transaction-scoped advisory lock for pool operations
+	lockID := GenerateLockID("pool_acquire_" + p.Config.PoolID)
+	if err := LockInTx(ctx, tx, lockID); err != nil {
+		return nil, fmt.Errorf("failed to acquire pool advisory lock: %w", err)
+	}
 
 	// Acquire pool state lock
 	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
@@ -255,12 +267,25 @@ func (p *Pool) ReleaseDatabase(dbName string, failed bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Check if StateDB is still valid
+	if err := p.StateDB.PingContext(ctx); err != nil {
+		log.Printf("StateDB is not available for release (pool_id=%s, db=%s): %v", p.Config.PoolID, dbName, err)
+		return
+	}
+
 	tx, err := p.StateDB.BeginTx(ctx, nil)
 	if err != nil {
 		log.Printf("failed to begin transaction for release: %v", err)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Acquire transaction-scoped advisory lock for pool operations
+	lockID := GenerateLockID("pool_acquire_" + p.Config.PoolID)
+	if err := LockInTx(ctx, tx, lockID); err != nil {
+		log.Printf("failed to acquire pool advisory lock for release: %v", err)
+		return
+	}
 
 	state, err := GetPoolState(ctx, tx, p.Config.PoolID)
 	if err != nil {
