@@ -10,13 +10,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// TestAcquireSequentially ensures that the pool can be acquired sequentially
+// without issues. It uses a small pool size to force the creation of new
+// databases for each acquisition. The test checks that the template database is
+// created correctly and that each acquired pool has the expected schema and data.
 func TestAcquireSequentially(t *testing.T) {
-	// This test ensures that the pool can be acquired sequentially without
-	// issues. It uses a small pool size to force the creation of new databases
-	// for each acquisition. The test checks that the template database is
-	// created correctly and that each acquired pool has the expected schema
-	// and data.
-
 	rootConn := getRootConnection(t)
 
 	maxSize := 1
@@ -42,9 +40,7 @@ func TestAcquireSequentially(t *testing.T) {
 			return err
 		},
 		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `
-				TRUNCATE TABLE entities CASCADE;
-			`)
+			_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
 			return err
 		},
 	})
@@ -100,6 +96,7 @@ func TestAcquireSequentially(t *testing.T) {
 	require.NoError(t, rows.Err(), "error iterating over database names")
 }
 
+// TestAcquireParallel tests Acquire in parallel to single dbpool.
 func TestAcquireParallel(t *testing.T) {
 	rootConn := getRootConnection(t)
 
@@ -126,9 +123,7 @@ func TestAcquireParallel(t *testing.T) {
 			return err
 		},
 		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `
-				TRUNCATE TABLE entities CASCADE;
-			`)
+			_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
 			return err
 		},
 	})
@@ -205,4 +200,100 @@ func TestAcquireParallel(t *testing.T) {
 	}
 	require.Lenf(t, datnames, maxSize, "expected %d databases, got %d: %v", maxSize, len(datnames), datnames)
 	require.NoError(t, rows.Err(), "error iterating over database names")
+}
+
+// TestParallelDBPool creates multiple dbpools in parallel to test
+// concurrent access and database creation.
+func TestParallelDBPool(t *testing.T) {
+	g, ctx := errgroup.WithContext(context.Background())
+
+	poolName := "dbpool" // Name of the pool to share across parallel tests
+	parallelism := 2     // Number of parallel pools to create
+
+	for i := range parallelism {
+		g.Go(func() error {
+			rootConn := getRootConnection(t)
+			dbpool1, err := New(Config{
+				PoolName: poolName,
+				Conn:     rootConn,
+				MaxSize:  1,
+				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+					_, err := conn.Exec(ctx, `
+						CREATE TABLE enum_values (
+							enum_value VARCHAR(10) PRIMARY KEY
+						);
+
+						INSERT INTO enum_values (enum_value) VALUES
+							('value1'),
+							('value2'),
+							('value3');
+
+						CREATE TABLE entities (
+							id SERIAL PRIMARY KEY,
+							enum_value VARCHAR(10) NOT NULL REFERENCES enum_values(enum_value)
+						);
+					`)
+					return err
+				},
+				ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+					_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
+					return err
+				},
+			})
+			require.NoErrorf(t, err, "[%d] failed to create pool", i)
+
+			t.Logf("[%d] Acquiring pool", i)
+			acquired, err := dbpool1.Acquire()
+			if err != nil {
+				return fmt.Errorf("[%d] failed to acquire pool: %w", i, err)
+			}
+			defer acquired.Release()
+
+			if acquired.Pool == nil {
+				return fmt.Errorf("[%d] acquired pool is nil", i)
+			}
+
+			t.Logf("[%d] Pinging acquired pool", i)
+			if err := acquired.Pool.Ping(ctx); err != nil {
+				return fmt.Errorf("[%d] failed to ping acquired pool: %w", i, err)
+			}
+
+			t.Logf("[%d] Counting rows in enum_values", i)
+			count, err := countTable(ctx, acquired.Pool, "enum_values")
+			if err != nil {
+				return fmt.Errorf("[%d] failed to count rows in enum_values: %w", i, err)
+			}
+			if count != 3 {
+				return fmt.Errorf("[%d] expected 3 rows in enum_values, got %d", i, count)
+			}
+
+			t.Logf("[%d] Counting rows in entities", i)
+			count, err = countTable(ctx, acquired.Pool, "entities")
+			if err != nil {
+				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
+			}
+			if count != 0 {
+				return fmt.Errorf("[%d] expected 0 rows in entities, got %d", i, count)
+			}
+
+			t.Logf("[%d] Inserting into entities", i)
+			_, err = acquired.Pool.Exec(ctx, "INSERT INTO entities (enum_value) VALUES ('value1')")
+			if err != nil {
+				return fmt.Errorf("[%d] failed to insert into entities: %w", i, err)
+			}
+
+			t.Logf("[%d] Counting rows in entities after insert", i)
+			count, err = countTable(ctx, acquired.Pool, "entities")
+			if err != nil {
+				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
+			}
+			if count != 1 {
+				return fmt.Errorf("[%d] expected 1 rows in entities, got %d", i, count)
+			}
+
+			return nil
+		})
+	}
+
+	require.NoError(t, g.Wait(), "error during parallel acquisition")
 }

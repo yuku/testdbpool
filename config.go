@@ -9,6 +9,11 @@ import (
 )
 
 type Config struct {
+	// PoolName is the name of the test database pool.
+	// Pool instances with the same PoolName runs in parallel sharing the same
+	// template database and test databases.
+	PoolName string
+
 	// Conn is the connection to the database with full privileges.
 	// This connection is used to create the pool and manage the database.
 	Conn *pgx.Conn
