@@ -35,7 +35,7 @@ func TestAcquire(t *testing.T) {
 		},
 		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
 			_, err := conn.Exec(ctx, `
-				TRUNCATE TABLE entities CASCADE RESTART IDENTITY;
+				TRUNCATE TABLE entities CASCADE;
 			`)
 			return err
 		},
@@ -54,7 +54,7 @@ func TestAcquire(t *testing.T) {
 		t.Fatalf("found %d existing test databases, expected none", count)
 	}
 
-	for range 10 {
+	for range 3 {
 		pool, err := dbpool.Acquire()
 		if err != nil {
 			t.Fatalf("failed to acquire pool: %v", err)

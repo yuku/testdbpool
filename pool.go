@@ -152,7 +152,19 @@ func (p *Pool) destroyDatabaseResource(resource *DatabaseResource) {
 
 // resetDatabaseResource resets a database to a clean state from template
 func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseResource) error {
-	return fmt.Errorf("not implemented")
+	// Get a connection from the pool to execute the reset function
+	conn, err := resource.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection for reset: %w", err)
+	}
+	defer conn.Release()
+
+	// Execute the user-provided reset function
+	if err := p.resetDatabase(ctx, conn.Conn()); err != nil {
+		return fmt.Errorf("failed to reset database: %w", err)
+	}
+
+	return nil
 }
 
 // Acquire gets a database from the pool
