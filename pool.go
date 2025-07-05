@@ -23,7 +23,49 @@ type Pool struct {
 // The reason why cleanup is not done after each test end is to keep the
 // databases available for debugging purposes.
 func (p *Pool) cleanupPreviousSession(ctx context.Context) error {
-	return fmt.Errorf("not implemented")
+	// Drop all test databases from previous sessions
+	_, err := p.rootConn.Exec(ctx, `
+		SELECT pg_terminate_backend(pid)
+		FROM pg_stat_activity
+		WHERE datname LIKE 'testdb_%'
+			AND pid <> pg_backend_pid()
+	`)
+	if err != nil {
+		// Ignore errors from terminating backends as they might not exist
+	}
+
+	// Drop all databases that match our naming pattern
+	rows, err := p.rootConn.Query(ctx, `
+		SELECT datname FROM pg_database WHERE datname LIKE 'testdb_%'
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to list test databases: %w", err)
+	}
+	defer rows.Close()
+
+	var databases []string
+	for rows.Next() {
+		var dbName string
+		if err := rows.Scan(&dbName); err != nil {
+			return fmt.Errorf("failed to scan database name: %w", err)
+		}
+		databases = append(databases, dbName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate over databases: %w", err)
+	}
+
+	// Drop each database
+	for _, dbName := range databases {
+		_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		if err != nil {
+			// Log but don't fail on individual database drops
+			// as they might be in use or already dropped
+		}
+	}
+
+	return nil
 }
 
 // Acquire creates a new test database and returns a connection pool to it
