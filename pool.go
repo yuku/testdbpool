@@ -11,6 +11,23 @@ import (
 	"github.com/jackc/puddle/v2"
 )
 
+// Global registry for shared pools
+var (
+	sharedPools   = make(map[string]*sharedPool)
+	sharedPoolsMu sync.Mutex
+)
+
+// sharedPool represents a pool that can be shared across multiple Pool instances
+type sharedPool struct {
+	resourcePool    *puddle.Pool[*DatabaseResource]
+	templateName    string
+	templateCreated bool
+	setupTemplate   func(context.Context, *pgx.Conn) error
+	resetDatabase   func(context.Context, *pgx.Conn) error
+	templateMu      sync.Mutex
+	refCount        int
+}
+
 // DatabaseResource represents a pooled database with its connection pool
 type DatabaseResource struct {
 	dbName string
@@ -30,14 +47,17 @@ func (ad *AcquiredDatabase) Release() {
 
 // Pool manages test database pools using puddle for resource management
 type Pool struct {
-	rootConn        *pgx.Conn
+	rootConn   *pgx.Conn
+	poolName   string
+	shared     *sharedPool // Reference to shared pool if poolName is set
+	rootConnMu sync.Mutex  // Protects rootConn usage
+	// The following fields are only used when pool is not shared (poolName is empty)
 	templateName    string
 	templateCreated bool
 	setupTemplate   func(context.Context, *pgx.Conn) error
 	resetDatabase   func(context.Context, *pgx.Conn) error
 	resourcePool    *puddle.Pool[*DatabaseResource]
 	templateMu      sync.Mutex // Protects template creation
-	rootConnMu      sync.Mutex // Protects rootConn usage
 }
 
 func New(config Config) (*Pool, error) {
@@ -45,6 +65,12 @@ func New(config Config) (*Pool, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// If PoolName is specified, use shared pool
+	if config.PoolName != "" {
+		return newSharedPool(config)
+	}
+
+	// Create a non-shared pool
 	pool := &Pool{
 		rootConn:      config.Conn,
 		templateName:  "testdb_template",
@@ -75,6 +101,65 @@ func New(config Config) (*Pool, error) {
 	}
 
 	pool.resourcePool = puddlePool
+
+	return pool, nil
+}
+
+// newSharedPool creates or gets a shared pool based on PoolName
+func newSharedPool(config Config) (*Pool, error) {
+	sharedPoolsMu.Lock()
+	defer sharedPoolsMu.Unlock()
+
+	// Check if shared pool already exists
+	if shared, exists := sharedPools[config.PoolName]; exists {
+		// Increment reference count
+		shared.refCount++
+		return &Pool{
+			rootConn: config.Conn,
+			poolName: config.PoolName,
+			shared:   shared,
+		}, nil
+	}
+
+	// Create new shared pool
+	shared := &sharedPool{
+		templateName:  "testdb_template_" + config.PoolName,
+		setupTemplate: config.SetupTemplate,
+		resetDatabase: config.ResetDatabase,
+		refCount:      1,
+	}
+
+	// Create pool wrapper for cleanup
+	pool := &Pool{
+		rootConn: config.Conn,
+		poolName: config.PoolName,
+		shared:   shared,
+	}
+
+	// Clean up previous session
+	if err := pool.cleanupPreviousSession(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to clean up previous session: %w", err)
+	}
+
+	// Create puddle pool configuration
+	puddleConfig := &puddle.Config[*DatabaseResource]{
+		Constructor: func(ctx context.Context) (*DatabaseResource, error) {
+			return pool.createDatabaseResource(ctx)
+		},
+		Destructor: func(resource *DatabaseResource) {
+			pool.destroyDatabaseResource(resource)
+		},
+		MaxSize: int32(config.maxSize()),
+	}
+
+	// Create puddle pool
+	puddlePool, err := puddle.NewPool(puddleConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create puddle pool: %w", err)
+	}
+
+	shared.resourcePool = puddlePool
+	sharedPools[config.PoolName] = shared
 
 	return pool, nil
 }
@@ -132,23 +217,38 @@ func (p *Pool) cleanupPreviousSession(ctx context.Context) error {
 
 // createDatabaseResource creates a new database and returns a DatabaseResource
 func (p *Pool) createDatabaseResource(ctx context.Context) (*DatabaseResource, error) {
+	// Use shared pool fields if available
+	var templateMu *sync.Mutex
+	var templateCreated *bool
+	var templateName string
+
+	if p.shared != nil {
+		templateMu = &p.shared.templateMu
+		templateCreated = &p.shared.templateCreated
+		templateName = p.shared.templateName
+	} else {
+		templateMu = &p.templateMu
+		templateCreated = &p.templateCreated
+		templateName = p.templateName
+	}
+
 	// Ensure template database is created with proper synchronization
-	p.templateMu.Lock()
-	if !p.templateCreated {
+	templateMu.Lock()
+	if !*templateCreated {
 		err := p.createTemplateDatabase(ctx)
 		if err != nil {
-			p.templateMu.Unlock()
+			templateMu.Unlock()
 			return nil, fmt.Errorf("failed to create template database: %w", err)
 		}
 	}
-	p.templateMu.Unlock()
+	templateMu.Unlock()
 
 	// Generate unique database name
 	dbName := "testdb_" + uuid.New().String()[:8]
 
 	// Create the test database from template with connection protection
 	p.rootConnMu.Lock()
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, templateName))
 	p.rootConnMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create test database: %w", err)
@@ -224,8 +324,14 @@ func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseReso
 	}
 	defer conn.Release()
 
+	// Use shared reset function if available
+	resetFunc := p.resetDatabase
+	if p.shared != nil {
+		resetFunc = p.shared.resetDatabase
+	}
+
 	// Execute the user-provided reset function
-	if err := p.resetDatabase(ctx, conn.Conn()); err != nil {
+	if err := resetFunc(ctx, conn.Conn()); err != nil {
 		return fmt.Errorf("failed to reset database: %w", err)
 	}
 
@@ -236,8 +342,14 @@ func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseReso
 func (p *Pool) Acquire() (*AcquiredDatabase, error) {
 	ctx := context.Background()
 
+	// Use shared pool if available
+	resourcePool := p.resourcePool
+	if p.shared != nil {
+		resourcePool = p.shared.resourcePool
+	}
+
 	// Acquire a resource from puddle pool
-	puddleResource, err := p.resourcePool.Acquire(ctx)
+	puddleResource, err := resourcePool.Acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire database resource: %w", err)
 	}
@@ -260,9 +372,21 @@ func (p *Pool) Acquire() (*AcquiredDatabase, error) {
 
 // createTemplateDatabase creates a template database and runs the setup function
 func (p *Pool) createTemplateDatabase(ctx context.Context) error {
+	// Get template name and setup function
+	var templateName string
+	var setupFunc func(context.Context, *pgx.Conn) error
+
+	if p.shared != nil {
+		templateName = p.shared.templateName
+		setupFunc = p.shared.setupTemplate
+	} else {
+		templateName = p.templateName
+		setupFunc = p.setupTemplate
+	}
+
 	// Create template database
 	p.rootConnMu.Lock()
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", p.templateName))
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", templateName))
 	if err != nil {
 		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to create template database: %w", err)
@@ -276,7 +400,7 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 		config.Password,
 		config.Host,
 		config.Port,
-		p.templateName,
+		templateName,
 	)
 
 	if config.TLSConfig == nil {
@@ -287,28 +411,46 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	if err != nil {
 		// Clean up template database on connection failure
 		p.rootConnMu.Lock()
-		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", templateName))
 		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to connect to template database: %w", err)
 	}
 	defer templateConn.Close(ctx)
 
 	// Run setup function
-	if err := p.setupTemplate(ctx, templateConn); err != nil {
+	if err := setupFunc(ctx, templateConn); err != nil {
 		// Clean up template database on setup failure
 		p.rootConnMu.Lock()
-		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", templateName))
 		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to setup template database: %w", err)
 	}
 
-	p.templateCreated = true
+	// Mark template as created
+	if p.shared != nil {
+		p.shared.templateCreated = true
+	} else {
+		p.templateCreated = true
+	}
 	return nil
 }
 
 // Close closes the pool and cleans up all resources
 func (p *Pool) Close() {
-	if p.resourcePool != nil {
+	if p.shared != nil {
+		// Decrement reference count for shared pool
+		sharedPoolsMu.Lock()
+		defer sharedPoolsMu.Unlock()
+
+		p.shared.refCount--
+		if p.shared.refCount == 0 {
+			// Last reference, close the pool
+			if p.shared.resourcePool != nil {
+				p.shared.resourcePool.Close()
+			}
+			delete(sharedPools, p.poolName)
+		}
+	} else if p.resourcePool != nil {
 		p.resourcePool.Close()
 	}
 }
