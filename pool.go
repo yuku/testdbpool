@@ -7,17 +7,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/puddle/v2"
 )
 
-// Pool manages test database pools
+// DatabaseResource represents a pooled database with its connection pool
+type DatabaseResource struct {
+	dbName string
+	pool   *pgxpool.Pool
+}
+
+// Pool manages test database pools using puddle for resource management
 type Pool struct {
 	rootConn        *pgx.Conn
 	templateName    string
 	templateCreated bool
 	setupTemplate   func(context.Context, *pgx.Conn) error
-	maxSize         int
-	databases       []string // Track created database names
-	currentIndex    int      // Index for round-robin reuse
+	resourcePool    *puddle.Pool[*DatabaseResource]
 }
 
 // cleanupPreviousSession cleans up the template database and test databases
@@ -71,10 +76,8 @@ func (p *Pool) cleanupPreviousSession(ctx context.Context) error {
 	return nil
 }
 
-// Acquire creates a new test database and returns a connection pool to it
-func (p *Pool) Acquire() (*pgxpool.Pool, error) {
-	ctx := context.Background()
-
+// createDatabaseResource creates a new database and returns a DatabaseResource
+func (p *Pool) createDatabaseResource(ctx context.Context) (*DatabaseResource, error) {
 	// Ensure template database is created
 	if !p.templateCreated {
 		if err := p.createTemplateDatabase(ctx); err != nil {
@@ -82,30 +85,13 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 		}
 	}
 
-	var dbName string
+	// Generate unique database name
+	dbName := "testdb_" + uuid.New().String()[:8]
 
-	// Check if we've reached maxSize
-	if len(p.databases) >= p.maxSize {
-		// Reuse existing database in round-robin fashion
-		dbName = p.databases[p.currentIndex]
-		p.currentIndex = (p.currentIndex + 1) % p.maxSize
-
-		// Reset the database by dropping and recreating it from template
-		if err := p.resetDatabase(ctx, dbName); err != nil {
-			return nil, fmt.Errorf("failed to reset database %s: %w", dbName, err)
-		}
-	} else {
-		// Create new database if under maxSize
-		dbName = "testdb_" + uuid.New().String()[:8]
-
-		// Create the test database from template
-		_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create test database: %w", err)
-		}
-
-		// Track the new database
-		p.databases = append(p.databases, dbName)
+	// Create the test database from template
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create test database: %w", err)
 	}
 
 	// Get connection config from root connection
@@ -128,15 +114,119 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 	// Create pool for the new database
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		// Clean up database if pool creation fails (only if newly created)
-		if len(p.databases) < p.maxSize {
-			p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
-			p.databases = p.databases[:len(p.databases)-1]
-		}
+		// Clean up database if pool creation fails
+		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
 		return nil, fmt.Errorf("failed to create pool: %w", err)
 	}
 
-	return pool, nil
+	return &DatabaseResource{
+		dbName: dbName,
+		pool:   pool,
+	}, nil
+}
+
+// destroyDatabaseResource cleans up a database resource
+func (p *Pool) destroyDatabaseResource(resource *DatabaseResource) {
+	ctx := context.Background()
+
+	// Close the pool first
+	resource.pool.Close()
+
+	// Terminate all connections to the database
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
+		SELECT pg_terminate_backend(pid)
+		FROM pg_stat_activity
+		WHERE datname = '%s' AND pid <> pg_backend_pid()
+	`, resource.dbName))
+	if err != nil {
+		// Ignore errors from terminating backends
+	}
+
+	// Drop the database
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", resource.dbName))
+	if err != nil {
+		// Log but don't fail on cleanup
+	}
+}
+
+// resetDatabaseResource resets a database to a clean state from template
+func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseResource) error {
+	// Close existing pool
+	resource.pool.Close()
+
+	// Terminate all connections to the database
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
+		SELECT pg_terminate_backend(pid)
+		FROM pg_stat_activity
+		WHERE datname = '%s' AND pid <> pg_backend_pid()
+	`, resource.dbName))
+	if err != nil {
+		// Ignore errors from terminating backends
+	}
+
+	// Drop the database
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", resource.dbName))
+	if err != nil {
+		return fmt.Errorf("failed to drop database: %w", err)
+	}
+
+	// Recreate from template
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", resource.dbName, p.templateName))
+	if err != nil {
+		return fmt.Errorf("failed to recreate database: %w", err)
+	}
+
+	// Get connection config from root connection
+	config := p.rootConn.Config()
+
+	// Build connection string for the new database
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+		config.User,
+		config.Password,
+		config.Host,
+		config.Port,
+		resource.dbName,
+	)
+
+	// Add SSL mode if present
+	if config.TLSConfig == nil {
+		connStr += "?sslmode=disable"
+	}
+
+	// Create new pool
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		return fmt.Errorf("failed to create new pool: %w", err)
+	}
+
+	resource.pool = pool
+	return nil
+}
+
+// Acquire gets a database from the pool
+func (p *Pool) Acquire() (*pgxpool.Pool, error) {
+	ctx := context.Background()
+
+	// Acquire a resource from puddle pool
+	puddleResource, err := p.resourcePool.Acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire database resource: %w", err)
+	}
+
+	resource := puddleResource.Value()
+
+	// Reset the database to ensure clean state
+	if err := p.resetDatabaseResource(ctx, resource); err != nil {
+		puddleResource.Release()
+		return nil, fmt.Errorf("failed to reset database: %w", err)
+	}
+
+	// We need to release the puddle resource back to the pool
+	// but we're returning the pgxpool.Pool to maintain API compatibility
+	// The caller is responsible for the pgxpool, while puddle manages the database lifecycle
+	puddleResource.Release()
+
+	return resource.pool, nil
 }
 
 // createTemplateDatabase creates a template database and runs the setup function
@@ -180,29 +270,9 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	return nil
 }
 
-// resetDatabase drops and recreates a database from the template
-func (p *Pool) resetDatabase(ctx context.Context, dbName string) error {
-	// Terminate all connections to the database
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
-		SELECT pg_terminate_backend(pid)
-		FROM pg_stat_activity
-		WHERE datname = '%s' AND pid <> pg_backend_pid()
-	`, dbName))
-	if err != nil {
-		// Ignore errors from terminating backends
+// Close closes the pool and cleans up all resources
+func (p *Pool) Close() {
+	if p.resourcePool != nil {
+		p.resourcePool.Close()
 	}
-
-	// Drop the database
-	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
-	if err != nil {
-		return fmt.Errorf("failed to drop database: %w", err)
-	}
-
-	// Recreate from template
-	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
-	if err != nil {
-		return fmt.Errorf("failed to recreate database: %w", err)
-	}
-
-	return nil
 }
