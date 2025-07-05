@@ -3,6 +3,7 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,8 @@ type Pool struct {
 	setupTemplate   func(context.Context, *pgx.Conn) error
 	resetDatabase   func(context.Context, *pgx.Conn) error
 	resourcePool    *puddle.Pool[*DatabaseResource]
+	templateMu      sync.Mutex // Protects template creation
+	rootConnMu      sync.Mutex // Protects rootConn usage
 }
 
 // cleanupPreviousSession cleans up the template database and test databases
@@ -79,24 +82,32 @@ func (p *Pool) cleanupPreviousSession(ctx context.Context) error {
 
 // createDatabaseResource creates a new database and returns a DatabaseResource
 func (p *Pool) createDatabaseResource(ctx context.Context) (*DatabaseResource, error) {
-	// Ensure template database is created
+	// Ensure template database is created with proper synchronization
+	p.templateMu.Lock()
 	if !p.templateCreated {
-		if err := p.createTemplateDatabase(ctx); err != nil {
+		err := p.createTemplateDatabase(ctx)
+		if err != nil {
+			p.templateMu.Unlock()
 			return nil, fmt.Errorf("failed to create template database: %w", err)
 		}
 	}
+	p.templateMu.Unlock()
 
 	// Generate unique database name
 	dbName := "testdb_" + uuid.New().String()[:8]
 
-	// Create the test database from template
+	// Create the test database from template with connection protection
+	p.rootConnMu.Lock()
 	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
+	p.rootConnMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create test database: %w", err)
 	}
 
 	// Get connection config from root connection
+	p.rootConnMu.Lock()
 	config := p.rootConn.Config()
+	p.rootConnMu.Unlock()
 
 	// Build connection string for the new database
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
@@ -116,7 +127,9 @@ func (p *Pool) createDatabaseResource(ctx context.Context) (*DatabaseResource, e
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		// Clean up database if pool creation fails
+		p.rootConnMu.Lock()
 		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		p.rootConnMu.Unlock()
 		return nil, fmt.Errorf("failed to create pool: %w", err)
 	}
 
@@ -134,6 +147,7 @@ func (p *Pool) destroyDatabaseResource(resource *DatabaseResource) {
 	resource.pool.Close()
 
 	// Terminate all connections to the database
+	p.rootConnMu.Lock()
 	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
 		SELECT pg_terminate_backend(pid)
 		FROM pg_stat_activity
@@ -145,6 +159,7 @@ func (p *Pool) destroyDatabaseResource(resource *DatabaseResource) {
 
 	// Drop the database
 	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", resource.dbName))
+	p.rootConnMu.Unlock()
 	if err != nil {
 		// Log but don't fail on cleanup
 	}
@@ -196,13 +211,16 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 // createTemplateDatabase creates a template database and runs the setup function
 func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	// Create template database
+	p.rootConnMu.Lock()
 	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", p.templateName))
 	if err != nil {
+		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to create template database: %w", err)
 	}
 
 	// Connect to template database to run setup
 	config := p.rootConn.Config()
+	p.rootConnMu.Unlock()
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
 		config.User,
 		config.Password,
@@ -218,7 +236,9 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	templateConn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
 		// Clean up template database on connection failure
+		p.rootConnMu.Lock()
 		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to connect to template database: %w", err)
 	}
 	defer templateConn.Close(ctx)
@@ -226,7 +246,9 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	// Run setup function
 	if err := p.setupTemplate(ctx, templateConn); err != nil {
 		// Clean up template database on setup failure
+		p.rootConnMu.Lock()
 		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to setup template database: %w", err)
 	}
 
