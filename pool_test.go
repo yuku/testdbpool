@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -47,65 +48,38 @@ func TestAcquireSequentially(t *testing.T) {
 			return err
 		},
 	})
-	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
-	}
+	require.NoError(t, err, "failed to create pool")
 
 	// Ensure the template database hasn't been created yet.
-	var count int64
+	var count int
 	err = rootConn.QueryRow(context.Background(), "SELECT COUNT(*) FROM pg_database WHERE datname LIKE 'testdb_%';").Scan(&count)
-	if err != nil {
-		t.Fatalf("failed to count existing test databases: %v", err)
-	}
-	if count > 0 {
-		t.Fatalf("found %d existing test databases, expected none", count)
-	}
+	require.NoError(t, err, "failed to count existing test databases")
+	require.Zero(t, count, "expected no existing test databases")
 
 	for range 3 {
 		func() {
 			acquired, err := dbpool.Acquire()
-			if err != nil {
-				t.Fatalf("failed to acquire pool: %v", err)
-			}
+			require.NoError(t, err, "failed to acquire pool")
 			defer acquired.Release()
 
-			if acquired.Pool == nil {
-				t.Fatal("acquired pool is nil")
-			}
-
-			if err := acquired.Pool.Ping(context.Background()); err != nil {
-				t.Fatalf("failed to ping acquired pool: %v", err)
-			}
+			require.NotNil(t, acquired.Pool, "acquired pool should not be nil")
+			require.NoError(t, acquired.Pool.Ping(context.Background()), "failed to ping acquired pool")
 
 			count, err := countTable(context.Background(), acquired.Pool, "enum_values")
-			if err != nil {
-				t.Fatalf("failed to count rows in enum_values: %v", err)
-			}
-			if count != 3 {
-				t.Fatalf("expected 3 rows in enum_values, got %d", count)
-			}
+			require.NoError(t, err, "failed to count rows in enum_values")
+			require.Equal(t, 3, count, "expected 3 rows in enum_values")
 
 			count, err = countTable(context.Background(), acquired.Pool, "entities")
-			if err != nil {
-				t.Fatalf("failed to count rows in entities: %v", err)
-			}
-			if count != 0 {
-				t.Fatalf("expected 0 rows in entities, got %d", count)
-			}
+			require.NoError(t, err, "failed to count rows in entities")
+			require.Zero(t, count, "expected 0 rows in entities")
 
 			// Insert a row into entities
 			_, err = acquired.Pool.Exec(context.Background(), "INSERT INTO entities (enum_value) VALUES ('value1')")
-			if err != nil {
-				t.Fatalf("failed to insert into entities: %v", err)
-			}
+			require.NoError(t, err, "failed to insert into entities")
 
 			count, err = countTable(context.Background(), acquired.Pool, "entities")
-			if err != nil {
-				t.Fatalf("failed to count rows in entities: %v", err)
-			}
-			if count != 1 {
-				t.Fatalf("expected 1 rows in entities, got %d", count)
-			}
+			require.NoError(t, err, "failed to count rows in entities after insert")
+			require.Equal(t, 1, count, "expected 1 row in entities after insert")
 		}()
 	}
 
@@ -113,24 +87,17 @@ func TestAcquireSequentially(t *testing.T) {
 	// This is a simple check to ensure that the pool does not create more databases than allowed
 	// by MaxSize.
 	rows, err := rootConn.Query(context.Background(), "SELECT datname FROM pg_database WHERE datname LIKE 'testdb_%' AND datname <> 'testdb_template';")
-	if err != nil {
-		t.Fatalf("failed to query databases: %v", err)
-	}
+	require.NoError(t, err, "failed to query databases")
 	defer rows.Close()
+
 	var datnames []string
 	for rows.Next() {
 		var datname string
-		if err := rows.Scan(&datname); err != nil {
-			t.Fatalf("failed to scan database name: %v", err)
-		}
+		require.NoError(t, rows.Scan(&datname), "failed to scan database name")
 		datnames = append(datnames, datname)
 	}
-	if len(datnames) != maxSize {
-		t.Fatalf("expected %d databases, got %d: %v", maxSize, len(datnames), datnames)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("error iterating over database names: %v", err)
-	}
+	require.Lenf(t, datnames, maxSize, "expected %d databases, got %d: %v", maxSize, len(datnames), datnames)
+	require.NoError(t, rows.Err(), "error iterating over database names")
 }
 
 func TestAcquireParallel(t *testing.T) {
@@ -165,9 +132,7 @@ func TestAcquireParallel(t *testing.T) {
 			return err
 		},
 	})
-	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
-	}
+	require.NoError(t, err, "failed to create pool")
 
 	g, ctx := errgroup.WithContext(context.Background())
 
@@ -226,27 +191,18 @@ func TestAcquireParallel(t *testing.T) {
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		t.Fatalf("error during parallel acquisition: %v", err)
-	}
+	require.NoError(t, g.Wait(), "error during parallel acquisition")
 
 	rows, err := rootConn.Query(context.Background(), "SELECT datname FROM pg_database WHERE datname LIKE 'testdb_%' AND datname <> 'testdb_template';")
-	if err != nil {
-		t.Fatalf("failed to query databases: %v", err)
-	}
+	require.NoError(t, err, "failed to query databases")
 	defer rows.Close()
+
 	var datnames []string
 	for rows.Next() {
 		var datname string
-		if err := rows.Scan(&datname); err != nil {
-			t.Fatalf("failed to scan database name: %v", err)
-		}
+		require.NoError(t, rows.Scan(&datname), "failed to scan database name")
 		datnames = append(datnames, datname)
 	}
-	if len(datnames) != maxSize {
-		t.Fatalf("expected %d databases, got %d: %v", maxSize, len(datnames), datnames)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("error iterating over database names: %v", err)
-	}
+	require.Lenf(t, datnames, maxSize, "expected %d databases, got %d: %v", maxSize, len(datnames), datnames)
+	require.NoError(t, rows.Err(), "error iterating over database names")
 }

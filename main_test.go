@@ -57,8 +57,8 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 
 // countTable counts the number of rows in the specified table.
-func countTable(ctx context.Context, conn *pgxpool.Pool, tableName string) (int64, error) {
-	var count int64
+func countTable(ctx context.Context, conn *pgxpool.Pool, tableName string) (int, error) {
+	var count int
 	err := conn.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count rows in %s: %w", tableName, err)
