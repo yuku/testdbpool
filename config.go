@@ -41,6 +41,9 @@ func New(config Config) (*Pool, error) {
 		templateName:  "testdb_template_" + generateID(),
 		setupTemplate: config.SetupTemplate,
 	}
+	if err := pool.cleanupPreviousSession(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to clean up previous session: %w", err)
+	}
 
 	return pool, nil
 }

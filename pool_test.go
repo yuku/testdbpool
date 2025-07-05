@@ -8,8 +8,9 @@ import (
 )
 
 func TestAcquire(t *testing.T) {
+	rootConn := getRootConnection(t)
 	dbpool, err := New(Config{
-		Conn: getRootConnection(t),
+		Conn: rootConn,
 		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 			_, err := conn.Exec(ctx, `
 				CREATE TABLE enum_values (
@@ -28,6 +29,16 @@ func TestAcquire(t *testing.T) {
 		t.Fatalf("failed to create pool: %v", err)
 	}
 
+	// Ensure the template database hasn't been created yet.
+	var count int64
+	err = rootConn.QueryRow(context.Background(), "SELECT COUNT(*) FROM pg_database WHERE datname LIKE 'testdb_%';").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count existing test databases: %v", err)
+	}
+	if count > 0 {
+		t.Fatalf("found %d existing test databases, expected none", count)
+	}
+
 	pool, err := dbpool.Acquire()
 	if err != nil {
 		t.Fatalf("failed to acquire pool: %v", err)
@@ -41,22 +52,11 @@ func TestAcquire(t *testing.T) {
 		t.Fatalf("failed to ping acquired pool: %v", err)
 	}
 
-	rows, err := pool.Query(context.Background(), "SELECT COUNT(*) FROM enum_values;")
+	err = pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM enum_values;").Scan(&count)
 	if err != nil {
 		t.Fatalf("failed to query enum_values: %v", err)
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		t.Fatal("expected at least one row in enum_values")
-	}
-	var count int
-	if err := rows.Scan(&count); err != nil {
-		t.Fatalf("failed to scan count from enum_values: %v", err)
-	}
 	if count != 3 {
 		t.Fatalf("expected 3 rows in enum_values, got %d", count)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("error during rows iteration: %v", err)
 	}
 }
