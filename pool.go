@@ -17,6 +17,17 @@ type DatabaseResource struct {
 	pool   *pgxpool.Pool
 }
 
+// AcquiredDatabase represents an acquired database that must be released
+type AcquiredDatabase struct {
+	Pool           *pgxpool.Pool
+	puddleResource *puddle.Resource[*DatabaseResource]
+}
+
+// Release returns the database back to the pool
+func (ad *AcquiredDatabase) Release() {
+	ad.puddleResource.Release()
+}
+
 // Pool manages test database pools using puddle for resource management
 type Pool struct {
 	rootConn        *pgx.Conn
@@ -222,7 +233,7 @@ func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseReso
 }
 
 // Acquire gets a database from the pool
-func (p *Pool) Acquire() (*pgxpool.Pool, error) {
+func (p *Pool) Acquire() (*AcquiredDatabase, error) {
 	ctx := context.Background()
 
 	// Acquire a resource from puddle pool
@@ -239,12 +250,12 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("failed to reset database: %w", err)
 	}
 
-	// We need to release the puddle resource back to the pool
-	// but we're returning the pgxpool.Pool to maintain API compatibility
-	// The caller is responsible for the pgxpool, while puddle manages the database lifecycle
-	puddleResource.Release()
-
-	return resource.pool, nil
+	// Return the acquired database with the puddle resource
+	// The caller must call Release() when done
+	return &AcquiredDatabase{
+		Pool:           resource.pool,
+		puddleResource: puddleResource,
+	}, nil
 }
 
 // createTemplateDatabase creates a template database and runs the setup function

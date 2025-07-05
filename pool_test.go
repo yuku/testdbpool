@@ -62,48 +62,51 @@ func TestAcquireSequentially(t *testing.T) {
 	}
 
 	for range 3 {
-		pool, err := dbpool.Acquire()
-		if err != nil {
-			t.Fatalf("failed to acquire pool: %v", err)
-		}
+		func() {
+			acquired, err := dbpool.Acquire()
+			if err != nil {
+				t.Fatalf("failed to acquire pool: %v", err)
+			}
+			defer acquired.Release()
 
-		if pool == nil {
-			t.Fatal("acquired pool is nil")
-		}
+			if acquired.Pool == nil {
+				t.Fatal("acquired pool is nil")
+			}
 
-		if err := pool.Ping(context.Background()); err != nil {
-			t.Fatalf("failed to ping acquired pool: %v", err)
-		}
+			if err := acquired.Pool.Ping(context.Background()); err != nil {
+				t.Fatalf("failed to ping acquired pool: %v", err)
+			}
 
-		count, err := countTable(context.Background(), pool, "enum_values")
-		if err != nil {
-			t.Fatalf("failed to count rows in enum_values: %v", err)
-		}
-		if count != 3 {
-			t.Fatalf("expected 3 rows in enum_values, got %d", count)
-		}
+			count, err := countTable(context.Background(), acquired.Pool, "enum_values")
+			if err != nil {
+				t.Fatalf("failed to count rows in enum_values: %v", err)
+			}
+			if count != 3 {
+				t.Fatalf("expected 3 rows in enum_values, got %d", count)
+			}
 
-		count, err = countTable(context.Background(), pool, "entities")
-		if err != nil {
-			t.Fatalf("failed to count rows in entities: %v", err)
-		}
-		if count != 0 {
-			t.Fatalf("expected 0 rows in entities, got %d", count)
-		}
+			count, err = countTable(context.Background(), acquired.Pool, "entities")
+			if err != nil {
+				t.Fatalf("failed to count rows in entities: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("expected 0 rows in entities, got %d", count)
+			}
 
-		// Insert a row into entities
-		_, err = pool.Exec(context.Background(), "INSERT INTO entities (enum_value) VALUES ('value1')")
-		if err != nil {
-			t.Fatalf("failed to insert into entities: %v", err)
-		}
+			// Insert a row into entities
+			_, err = acquired.Pool.Exec(context.Background(), "INSERT INTO entities (enum_value) VALUES ('value1')")
+			if err != nil {
+				t.Fatalf("failed to insert into entities: %v", err)
+			}
 
-		count, err = countTable(context.Background(), pool, "entities")
-		if err != nil {
-			t.Fatalf("failed to count rows in entities: %v", err)
-		}
-		if count != 1 {
-			t.Fatalf("expected 1 rows in entities, got %d", count)
-		}
+			count, err = countTable(context.Background(), acquired.Pool, "entities")
+			if err != nil {
+				t.Fatalf("failed to count rows in entities: %v", err)
+			}
+			if count != 1 {
+				t.Fatalf("expected 1 rows in entities, got %d", count)
+			}
+		}()
 	}
 
 	// Confirm that there are no more than maxSize databases created
@@ -171,22 +174,23 @@ func TestAcquireParallel(t *testing.T) {
 	for i := range 5 {
 		g.Go(func() error {
 			t.Logf("[%d] Acquiring pool", i)
-			pool, err := dbpool.Acquire()
+			acquired, err := dbpool.Acquire()
 			if err != nil {
 				return fmt.Errorf("[%d] failed to acquire pool: %w", i, err)
 			}
+			defer acquired.Release()
 
-			if pool == nil {
+			if acquired.Pool == nil {
 				return fmt.Errorf("[%d] acquired pool is nil", i)
 			}
 
 			t.Logf("[%d] Pinging acquired pool", i)
-			if err := pool.Ping(ctx); err != nil {
+			if err := acquired.Pool.Ping(ctx); err != nil {
 				return fmt.Errorf("[%d] failed to ping acquired pool: %w", i, err)
 			}
 
 			t.Logf("[%d] Counting rows in enum_values", i)
-			count, err := countTable(ctx, pool, "enum_values")
+			count, err := countTable(ctx, acquired.Pool, "enum_values")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in enum_values: %w", i, err)
 			}
@@ -195,7 +199,7 @@ func TestAcquireParallel(t *testing.T) {
 			}
 
 			t.Logf("[%d] Counting rows in entities", i)
-			count, err = countTable(ctx, pool, "entities")
+			count, err = countTable(ctx, acquired.Pool, "entities")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
 			}
@@ -204,13 +208,13 @@ func TestAcquireParallel(t *testing.T) {
 			}
 
 			t.Logf("[%d] Inserting into entities", i)
-			_, err = pool.Exec(ctx, "INSERT INTO entities (enum_value) VALUES ('value1')")
+			_, err = acquired.Pool.Exec(ctx, "INSERT INTO entities (enum_value) VALUES ('value1')")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to insert into entities: %w", i, err)
 			}
 
 			t.Logf("[%d] Counting rows in entities after insert", i)
-			count, err = countTable(ctx, pool, "entities")
+			count, err = countTable(ctx, acquired.Pool, "entities")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
 			}
