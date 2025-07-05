@@ -15,6 +15,9 @@ type Pool struct {
 	templateName    string
 	templateCreated bool
 	setupTemplate   func(context.Context, *pgx.Conn) error
+	maxSize         int
+	databases       []string // Track created database names
+	currentIndex    int      // Index for round-robin reuse
 }
 
 // cleanupPreviousSession cleans up the template database and test databases
@@ -79,13 +82,30 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 		}
 	}
 
-	// Generate unique database name
-	dbName := "testdb_" + uuid.New().String()[:8]
+	var dbName string
 
-	// Create the test database from template
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create test database: %w", err)
+	// Check if we've reached maxSize
+	if len(p.databases) >= p.maxSize {
+		// Reuse existing database in round-robin fashion
+		dbName = p.databases[p.currentIndex]
+		p.currentIndex = (p.currentIndex + 1) % p.maxSize
+
+		// Reset the database by dropping and recreating it from template
+		if err := p.resetDatabase(ctx, dbName); err != nil {
+			return nil, fmt.Errorf("failed to reset database %s: %w", dbName, err)
+		}
+	} else {
+		// Create new database if under maxSize
+		dbName = "testdb_" + uuid.New().String()[:8]
+
+		// Create the test database from template
+		_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create test database: %w", err)
+		}
+
+		// Track the new database
+		p.databases = append(p.databases, dbName)
 	}
 
 	// Get connection config from root connection
@@ -108,8 +128,11 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 	// Create pool for the new database
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		// Clean up database if pool creation fails
-		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+		// Clean up database if pool creation fails (only if newly created)
+		if len(p.databases) < p.maxSize {
+			p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+			p.databases = p.databases[:len(p.databases)-1]
+		}
 		return nil, fmt.Errorf("failed to create pool: %w", err)
 	}
 
@@ -154,5 +177,32 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 	}
 
 	p.templateCreated = true
+	return nil
+}
+
+// resetDatabase drops and recreates a database from the template
+func (p *Pool) resetDatabase(ctx context.Context, dbName string) error {
+	// Terminate all connections to the database
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
+		SELECT pg_terminate_backend(pid)
+		FROM pg_stat_activity
+		WHERE datname = '%s' AND pid <> pg_backend_pid()
+	`, dbName))
+	if err != nil {
+		// Ignore errors from terminating backends
+	}
+
+	// Drop the database
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName))
+	if err != nil {
+		return fmt.Errorf("failed to drop database: %w", err)
+	}
+
+	// Recreate from template
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
+	if err != nil {
+		return fmt.Errorf("failed to recreate database: %w", err)
+	}
+
 	return nil
 }

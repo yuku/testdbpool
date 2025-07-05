@@ -55,6 +55,9 @@ func New(config Config) (*Pool, error) {
 		rootConn:      config.Conn,
 		templateName:  "testdb_template",
 		setupTemplate: config.SetupTemplate,
+		maxSize:       config.maxSize(),
+		databases:     make([]string, 0),
+		currentIndex:  0,
 	}
 	if err := pool.cleanupPreviousSession(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to clean up previous session: %w", err)
