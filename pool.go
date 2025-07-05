@@ -11,18 +11,28 @@ import (
 
 // Pool manages test database pools
 type Pool struct {
-	rootConn *pgx.Conn
+	rootConn         *pgx.Conn
+	templateName     string
+	templateCreated  bool
+	setupTemplate    func(context.Context, *pgx.Conn) error
 }
 
 // Acquire creates a new test database and returns a connection pool to it
 func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 	ctx := context.Background()
 	
+	// Ensure template database is created
+	if !p.templateCreated {
+		if err := p.createTemplateDatabase(ctx); err != nil {
+			return nil, fmt.Errorf("failed to create template database: %w", err)
+		}
+	}
+	
 	// Generate unique database name
 	dbName := "testdb_" + uuid.New().String()[:8]
 	
-	// Create the test database
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+	// Create the test database from template
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbName, p.templateName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create test database: %w", err)
 	}
@@ -53,4 +63,45 @@ func (p *Pool) Acquire() (*pgxpool.Pool, error) {
 	}
 	
 	return pool, nil
+}
+
+// createTemplateDatabase creates a template database and runs the setup function
+func (p *Pool) createTemplateDatabase(ctx context.Context) error {
+	// Create template database
+	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", p.templateName))
+	if err != nil {
+		return fmt.Errorf("failed to create template database: %w", err)
+	}
+	
+	// Connect to template database to run setup
+	config := p.rootConn.Config()
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+		config.User,
+		config.Password,
+		config.Host,
+		config.Port,
+		p.templateName,
+	)
+	
+	if config.TLSConfig == nil {
+		connStr += "?sslmode=disable"
+	}
+	
+	templateConn, err := pgx.Connect(ctx, connStr)
+	if err != nil {
+		// Clean up template database on connection failure
+		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		return fmt.Errorf("failed to connect to template database: %w", err)
+	}
+	defer templateConn.Close(ctx)
+	
+	// Run setup function
+	if err := p.setupTemplate(ctx, templateConn); err != nil {
+		// Clean up template database on setup failure
+		p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", p.templateName))
+		return fmt.Errorf("failed to setup template database: %w", err)
+	}
+	
+	p.templateCreated = true
+	return nil
 }

@@ -3,6 +3,7 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -36,8 +37,15 @@ func New(config Config) (*Pool, error) {
 	}
 
 	pool := &Pool{
-		rootConn: config.Conn,
+		rootConn:      config.Conn,
+		templateName:  "testdb_template_" + generateID(),
+		setupTemplate: config.SetupTemplate,
 	}
 
 	return pool, nil
+}
+
+// generateID generates a short unique ID for database names
+func generateID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())[10:16]
 }
