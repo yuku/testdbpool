@@ -22,6 +22,12 @@ type Config struct {
 	// It is called only once when the pool is created.
 	// Each test database is created from this template.
 	SetupTemplate func(context.Context, *pgx.Conn) error
+
+	// ResetDatabase is a function that resets the database to its initial state.
+	// It is called when the testdb pool is reused.
+	// After this function is called, the database should be in the same state
+	// as it was after the SetupTemplate function was called.
+	ResetDatabase func(context.Context, *pgx.Conn) error
 }
 
 func (c *Config) Validate() error {
@@ -35,6 +41,10 @@ func (c *Config) Validate() error {
 
 	if c.SetupTemplate == nil {
 		return fmt.Errorf("SetupTemplate function is required")
+	}
+
+	if c.ResetDatabase == nil {
+		return fmt.Errorf("ResetDatabase function is required")
 	}
 
 	return nil
@@ -56,6 +66,7 @@ func New(config Config) (*Pool, error) {
 		rootConn:      config.Conn,
 		templateName:  "testdb_template",
 		setupTemplate: config.SetupTemplate,
+		resetDatabase: config.ResetDatabase,
 	}
 
 	// Clean up previous session before creating puddle pool

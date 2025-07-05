@@ -33,6 +33,12 @@ func TestAcquire(t *testing.T) {
 			`)
 			return err
 		},
+		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `
+				TRUNCATE TABLE entities CASCADE RESTART IDENTITY;
+			`)
+			return err
+		},
 	})
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)

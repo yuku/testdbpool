@@ -22,6 +22,7 @@ type Pool struct {
 	templateName    string
 	templateCreated bool
 	setupTemplate   func(context.Context, *pgx.Conn) error
+	resetDatabase   func(context.Context, *pgx.Conn) error
 	resourcePool    *puddle.Pool[*DatabaseResource]
 }
 
@@ -151,56 +152,7 @@ func (p *Pool) destroyDatabaseResource(resource *DatabaseResource) {
 
 // resetDatabaseResource resets a database to a clean state from template
 func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseResource) error {
-	// Close existing pool
-	resource.pool.Close()
-
-	// Terminate all connections to the database
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf(`
-		SELECT pg_terminate_backend(pid)
-		FROM pg_stat_activity
-		WHERE datname = '%s' AND pid <> pg_backend_pid()
-	`, resource.dbName))
-	if err != nil {
-		// Ignore errors from terminating backends
-	}
-
-	// Drop the database
-	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", resource.dbName))
-	if err != nil {
-		return fmt.Errorf("failed to drop database: %w", err)
-	}
-
-	// Recreate from template
-	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", resource.dbName, p.templateName))
-	if err != nil {
-		return fmt.Errorf("failed to recreate database: %w", err)
-	}
-
-	// Get connection config from root connection
-	config := p.rootConn.Config()
-
-	// Build connection string for the new database
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
-		config.User,
-		config.Password,
-		config.Host,
-		config.Port,
-		resource.dbName,
-	)
-
-	// Add SSL mode if present
-	if config.TLSConfig == nil {
-		connStr += "?sslmode=disable"
-	}
-
-	// Create new pool
-	pool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		return fmt.Errorf("failed to create new pool: %w", err)
-	}
-
-	resource.pool = pool
-	return nil
+	return fmt.Errorf("not implemented")
 }
 
 // Acquire gets a database from the pool
