@@ -207,18 +207,20 @@ func TestAcquireParallel(t *testing.T) {
 func TestParallelDBPool(t *testing.T) {
 	g, ctx := errgroup.WithContext(context.Background())
 
-	poolName := "dbpool" // Name of the pool to share across parallel tests
-	parallelism := 2     // Number of parallel pools to create
+	poolNum := 3
+	parallelism := 3 // Number of parallel pools to create
 
-	for i := range parallelism {
-		g.Go(func() error {
-			rootConn := getRootConnection(t)
-			dbpool1, err := New(Config{
-				PoolName: poolName,
-				Conn:     rootConn,
-				MaxSize:  1,
-				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, `
+	for i := range poolNum {
+		poolName := fmt.Sprintf("dbpool%d", i) // Name of the pool to share across parallel tests
+		for j := range parallelism {
+			g.Go(func() error {
+				rootConn := getRootConnection(t)
+				dbpool1, err := New(Config{
+					PoolName: poolName,
+					Conn:     rootConn,
+					MaxSize:  1,
+					SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+						_, err := conn.Exec(ctx, `
 						CREATE TABLE enum_values (
 							enum_value VARCHAR(10) PRIMARY KEY
 						);
@@ -233,66 +235,67 @@ func TestParallelDBPool(t *testing.T) {
 							enum_value VARCHAR(10) NOT NULL REFERENCES enum_values(enum_value)
 						);
 					`)
-					return err
-				},
-				ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
-					return err
-				},
+						return err
+					},
+					ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+						_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
+						return err
+					},
+				})
+				require.NoErrorf(t, err, "[%d][%d] failed to create pool", i, j)
+
+				t.Logf("[%d][%d] Acquiring pool", i, j)
+				acquired, err := dbpool1.Acquire()
+				if err != nil {
+					return fmt.Errorf("[%d][%d] failed to acquire pool: %w", i, j, err)
+				}
+				defer acquired.Release()
+
+				if acquired.Pool == nil {
+					return fmt.Errorf("[%d][%d] acquired pool is nil", i, j)
+				}
+
+				t.Logf("[%d][%d] Pinging acquired pool", i, j)
+				if err := acquired.Pool.Ping(ctx); err != nil {
+					return fmt.Errorf("[%d][%d] failed to ping acquired pool: %w", i, j, err)
+				}
+
+				t.Logf("[%d][%d] Counting rows in enum_values", i, j)
+				count, err := countTable(ctx, acquired.Pool, "enum_values")
+				if err != nil {
+					return fmt.Errorf("[%d][%d] failed to count rows in enum_values: %w", i, j, err)
+				}
+				if count != 3 {
+					return fmt.Errorf("[%d][%d] expected 3 rows in enum_values, got %d", i, j, count)
+				}
+
+				t.Logf("[%d][%d] Counting rows in entities", i, j)
+				count, err = countTable(ctx, acquired.Pool, "entities")
+				if err != nil {
+					return fmt.Errorf("[%d][%d] failed to count rows in entities: %w", i, j, err)
+				}
+				if count != 0 {
+					return fmt.Errorf("[%d][%d] expected 0 rows in entities, got %d", i, j, count)
+				}
+
+				t.Logf("[%d][%d] Inserting into entities", i, j)
+				_, err = acquired.Pool.Exec(ctx, "INSERT INTO entities (enum_value) VALUES ('value1')")
+				if err != nil {
+					return fmt.Errorf("[%d][%d] failed to insert into entities: %w", i, j, err)
+				}
+
+				t.Logf("[%d][%d] Counting rows in entities after insert", i, j)
+				count, err = countTable(ctx, acquired.Pool, "entities")
+				if err != nil {
+					return fmt.Errorf("[%d][%d] failed to count rows in entities: %w", i, j, err)
+				}
+				if count != 1 {
+					return fmt.Errorf("[%d][%d] expected 1 rows in entities, got %d", i, j, count)
+				}
+
+				return nil
 			})
-			require.NoErrorf(t, err, "[%d] failed to create pool", i)
-
-			t.Logf("[%d] Acquiring pool", i)
-			acquired, err := dbpool1.Acquire()
-			if err != nil {
-				return fmt.Errorf("[%d] failed to acquire pool: %w", i, err)
-			}
-			defer acquired.Release()
-
-			if acquired.Pool == nil {
-				return fmt.Errorf("[%d] acquired pool is nil", i)
-			}
-
-			t.Logf("[%d] Pinging acquired pool", i)
-			if err := acquired.Pool.Ping(ctx); err != nil {
-				return fmt.Errorf("[%d] failed to ping acquired pool: %w", i, err)
-			}
-
-			t.Logf("[%d] Counting rows in enum_values", i)
-			count, err := countTable(ctx, acquired.Pool, "enum_values")
-			if err != nil {
-				return fmt.Errorf("[%d] failed to count rows in enum_values: %w", i, err)
-			}
-			if count != 3 {
-				return fmt.Errorf("[%d] expected 3 rows in enum_values, got %d", i, count)
-			}
-
-			t.Logf("[%d] Counting rows in entities", i)
-			count, err = countTable(ctx, acquired.Pool, "entities")
-			if err != nil {
-				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
-			}
-			if count != 0 {
-				return fmt.Errorf("[%d] expected 0 rows in entities, got %d", i, count)
-			}
-
-			t.Logf("[%d] Inserting into entities", i)
-			_, err = acquired.Pool.Exec(ctx, "INSERT INTO entities (enum_value) VALUES ('value1')")
-			if err != nil {
-				return fmt.Errorf("[%d] failed to insert into entities: %w", i, err)
-			}
-
-			t.Logf("[%d] Counting rows in entities after insert", i)
-			count, err = countTable(ctx, acquired.Pool, "entities")
-			if err != nil {
-				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
-			}
-			if count != 1 {
-				return fmt.Errorf("[%d] expected 1 rows in entities, got %d", i, count)
-			}
-
-			return nil
-		})
+		}
 	}
 
 	require.NoError(t, g.Wait(), "error during parallel acquisition")
