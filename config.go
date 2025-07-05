@@ -6,7 +6,6 @@ import (
 	"runtime"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/puddle/v2"
 )
 
 type Config struct {
@@ -55,43 +54,4 @@ func (c *Config) maxSize() int {
 		return runtime.GOMAXPROCS(0)
 	}
 	return c.MaxSize
-}
-
-func New(config Config) (*Pool, error) {
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
-	}
-
-	pool := &Pool{
-		rootConn:      config.Conn,
-		templateName:  "testdb_template",
-		setupTemplate: config.SetupTemplate,
-		resetDatabase: config.ResetDatabase,
-	}
-
-	// Clean up previous session before creating puddle pool
-	if err := pool.cleanupPreviousSession(context.Background()); err != nil {
-		return nil, fmt.Errorf("failed to clean up previous session: %w", err)
-	}
-
-	// Create puddle pool configuration
-	puddleConfig := &puddle.Config[*DatabaseResource]{
-		Constructor: func(ctx context.Context) (*DatabaseResource, error) {
-			return pool.createDatabaseResource(ctx)
-		},
-		Destructor: func(resource *DatabaseResource) {
-			pool.destroyDatabaseResource(resource)
-		},
-		MaxSize: int32(config.maxSize()),
-	}
-
-	// Create puddle pool
-	puddlePool, err := puddle.NewPool(puddleConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create puddle pool: %w", err)
-	}
-
-	pool.resourcePool = puddlePool
-
-	return pool, nil
 }
