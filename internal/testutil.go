@@ -1,4 +1,4 @@
-package testdbpool
+package internal
 
 import (
 	"context"
@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// getRootConnection returns a connection to the PostgreSQL database.
+// GetRootConnection returns a connection to the PostgreSQL database.
 // The returned connection must have full privileges to create databases and
 // manage the pool.
-func getRootConnection(t *testing.T) *pgx.Conn {
+func GetRootConnection(t *testing.T) *pgx.Conn {
 	t.Helper()
 
 	connStr := os.Getenv("DATABASE_URL")
@@ -56,8 +56,8 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// countTable counts the number of rows in the specified table.
-func countTable(ctx context.Context, conn *pgxpool.Pool, tableName string) (int, error) {
+// CountTable counts the number of rows in the specified table.
+func CountTable(ctx context.Context, conn *pgxpool.Pool, tableName string) (int, error) {
 	var count int
 	err := conn.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
 	if err != nil {

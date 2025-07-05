@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/yuku/testdbpool/internal"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -16,7 +17,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Conn: getRootConnection(t),
+				Conn: internal.GetRootConnection(t),
 				SetupTemplate: func(_ context.Context, _ *pgx.Conn) error {
 					// Example setup function that does nothing
 					return nil
@@ -43,7 +44,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing setup function",
 			config: Config{
-				Conn: getRootConnection(t),
+				Conn: internal.GetRootConnection(t),
 				ResetDatabase: func(_ context.Context, _ *pgx.Conn) error {
 					return nil
 				},
@@ -53,7 +54,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing reset function",
 			config: Config{
-				Conn: getRootConnection(t),
+				Conn: internal.GetRootConnection(t),
 				SetupTemplate: func(_ context.Context, _ *pgx.Conn) error {
 					return nil
 				},

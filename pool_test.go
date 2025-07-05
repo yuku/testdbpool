@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+	"github.com/yuku/testdbpool/internal"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -15,7 +16,7 @@ import (
 // databases for each acquisition. The test checks that the template database is
 // created correctly and that each acquired pool has the expected schema and data.
 func TestAcquireSequentially(t *testing.T) {
-	rootConn := getRootConnection(t)
+	rootConn := internal.GetRootConnection(t)
 
 	maxSize := 1
 	dbpool, err := New(Config{
@@ -61,11 +62,11 @@ func TestAcquireSequentially(t *testing.T) {
 			require.NotNil(t, acquired.Pool, "acquired pool should not be nil")
 			require.NoError(t, acquired.Pool.Ping(context.Background()), "failed to ping acquired pool")
 
-			count, err := countTable(context.Background(), acquired.Pool, "enum_values")
+			count, err := internal.CountTable(context.Background(), acquired.Pool, "enum_values")
 			require.NoError(t, err, "failed to count rows in enum_values")
 			require.Equal(t, 3, count, "expected 3 rows in enum_values")
 
-			count, err = countTable(context.Background(), acquired.Pool, "entities")
+			count, err = internal.CountTable(context.Background(), acquired.Pool, "entities")
 			require.NoError(t, err, "failed to count rows in entities")
 			require.Zero(t, count, "expected 0 rows in entities")
 
@@ -73,7 +74,7 @@ func TestAcquireSequentially(t *testing.T) {
 			_, err = acquired.Pool.Exec(context.Background(), "INSERT INTO entities (enum_value) VALUES ('value1')")
 			require.NoError(t, err, "failed to insert into entities")
 
-			count, err = countTable(context.Background(), acquired.Pool, "entities")
+			count, err = internal.CountTable(context.Background(), acquired.Pool, "entities")
 			require.NoError(t, err, "failed to count rows in entities after insert")
 			require.Equal(t, 1, count, "expected 1 row in entities after insert")
 		}()
@@ -98,7 +99,7 @@ func TestAcquireSequentially(t *testing.T) {
 
 // TestAcquireParallel tests Acquire in parallel to single dbpool.
 func TestAcquireParallel(t *testing.T) {
-	rootConn := getRootConnection(t)
+	rootConn := internal.GetRootConnection(t)
 
 	maxSize := 1
 	dbpool, err := New(Config{
@@ -150,7 +151,7 @@ func TestAcquireParallel(t *testing.T) {
 			}
 
 			t.Logf("[%d] Counting rows in enum_values", i)
-			count, err := countTable(ctx, acquired.Pool, "enum_values")
+			count, err := internal.CountTable(ctx, acquired.Pool, "enum_values")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in enum_values: %w", i, err)
 			}
@@ -159,7 +160,7 @@ func TestAcquireParallel(t *testing.T) {
 			}
 
 			t.Logf("[%d] Counting rows in entities", i)
-			count, err = countTable(ctx, acquired.Pool, "entities")
+			count, err = internal.CountTable(ctx, acquired.Pool, "entities")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
 			}
@@ -174,7 +175,7 @@ func TestAcquireParallel(t *testing.T) {
 			}
 
 			t.Logf("[%d] Counting rows in entities after insert", i)
-			count, err = countTable(ctx, acquired.Pool, "entities")
+			count, err = internal.CountTable(ctx, acquired.Pool, "entities")
 			if err != nil {
 				return fmt.Errorf("[%d] failed to count rows in entities: %w", i, err)
 			}
@@ -214,7 +215,7 @@ func TestParallelDBPool(t *testing.T) {
 		poolName := fmt.Sprintf("dbpool%d", i) // Name of the pool to share across parallel tests
 		for j := range parallelism {
 			g.Go(func() error {
-				rootConn := getRootConnection(t)
+				rootConn := internal.GetRootConnection(t)
 				dbpool1, err := New(Config{
 					PoolName: poolName,
 					Conn:     rootConn,
@@ -261,7 +262,7 @@ func TestParallelDBPool(t *testing.T) {
 				}
 
 				t.Logf("[%d][%d] Counting rows in enum_values", i, j)
-				count, err := countTable(ctx, acquired.Pool, "enum_values")
+				count, err := internal.CountTable(ctx, acquired.Pool, "enum_values")
 				if err != nil {
 					return fmt.Errorf("[%d][%d] failed to count rows in enum_values: %w", i, j, err)
 				}
@@ -270,7 +271,7 @@ func TestParallelDBPool(t *testing.T) {
 				}
 
 				t.Logf("[%d][%d] Counting rows in entities", i, j)
-				count, err = countTable(ctx, acquired.Pool, "entities")
+				count, err = internal.CountTable(ctx, acquired.Pool, "entities")
 				if err != nil {
 					return fmt.Errorf("[%d][%d] failed to count rows in entities: %w", i, j, err)
 				}
@@ -285,7 +286,7 @@ func TestParallelDBPool(t *testing.T) {
 				}
 
 				t.Logf("[%d][%d] Counting rows in entities after insert", i, j)
-				count, err = countTable(ctx, acquired.Pool, "entities")
+				count, err = internal.CountTable(ctx, acquired.Pool, "entities")
 				if err != nil {
 					return fmt.Errorf("[%d][%d] failed to count rows in entities: %w", i, j, err)
 				}
