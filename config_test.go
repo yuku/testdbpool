@@ -21,10 +21,6 @@ func TestConfig_Validate(t *testing.T) {
 					// Example setup function that does nothing
 					return nil
 				},
-				ResetDatabase: func(_ context.Context, _ *pgx.Conn) error {
-					// Example reset function that does nothing
-					return nil
-				},
 			},
 			wantErr: false,
 		},
@@ -34,9 +30,6 @@ func TestConfig_Validate(t *testing.T) {
 				SetupTemplate: func(_ context.Context, _ *pgx.Conn) error {
 					return nil
 				},
-				ResetDatabase: func(_ context.Context, _ *pgx.Conn) error {
-					return nil
-				},
 			},
 			wantErr: true,
 		},
@@ -44,19 +37,6 @@ func TestConfig_Validate(t *testing.T) {
 			name: "missing setup function",
 			config: Config{
 				Conn: getRootConnection(t),
-				ResetDatabase: func(_ context.Context, _ *pgx.Conn) error {
-					return nil
-				},
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing reset function",
-			config: Config{
-				Conn: getRootConnection(t),
-				SetupTemplate: func(_ context.Context, _ *pgx.Conn) error {
-					return nil
-				},
 			},
 			wantErr: true,
 		},

@@ -25,21 +25,6 @@ func TestAcquire(t *testing.T) {
 					('value1'),
 					('value2'),
 					('value3');
-
-				CREATE TABLE entities (
-					id SERIAL PRIMARY KEY,
-					enum_value VARCHAR(10) NOT NULL REFERENCES enum_values(enum_value)
-				);
-			`)
-			return err
-		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `
-				TRUNCATE TABLE enum_values;
-				INSERT INTO enum_values (enum_value) VALUES
-					('value1'),
-					('value2'),
-					('value3');
 			`)
 			return err
 		},
@@ -78,28 +63,6 @@ func TestAcquire(t *testing.T) {
 		}
 		if count != 3 {
 			t.Fatalf("expected 3 rows in enum_values, got %d", count)
-		}
-
-		count, err = countTable(context.Background(), pool, "entities")
-		if err != nil {
-			t.Fatalf("failed to count rows in entities: %v", err)
-		}
-		if count != 0 {
-			t.Fatalf("expected 0 rows in entities, got %d", count)
-		}
-
-		// Insert a row into entities
-		_, err = pool.Exec(context.Background(), "INSERT INTO entities (enum_value) VALUES ('value1')")
-		if err != nil {
-			t.Fatalf("failed to insert into entities: %v", err)
-		}
-
-		count, err = countTable(context.Background(), pool, "entities")
-		if err != nil {
-			t.Fatalf("failed to count rows in entities: %v", err)
-		}
-		if count != 1 {
-			t.Fatalf("expected 1 rows in entities, got %d", count)
 		}
 	}
 
