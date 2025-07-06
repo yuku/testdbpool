@@ -2,11 +2,21 @@ package testdbpool
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool/internal"
 )
+
+// dbInfo represents database information stored in database
+type dbInfo struct {
+	poolName     string
+	databaseName string
+	inUse        bool
+	processID    int
+}
 
 func TestEnsureTablesExist(t *testing.T) {
 	ctx := context.Background()
@@ -143,5 +153,121 @@ func TestPoolRegistry(t *testing.T) {
 		err = registerPoolInDB(conn, poolName, templateDB2, maxSize2)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "pool configuration mismatch")
+	})
+}
+
+func TestDatabaseAllocation(t *testing.T) {
+	ctx := context.Background()
+	conn := internal.GetRootConnection(t)
+
+	// Ensure tables exist
+	err := ensureTablesExist(conn)
+	require.NoError(t, err)
+
+	// Clean up test data
+	_, err = conn.Exec(ctx, "DELETE FROM testdbpool_databases")
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, "DELETE FROM testdbpool_registry")
+	require.NoError(t, err)
+
+	// Register a test pool
+	poolName := "test_alloc_pool"
+	templateDB := "testdb_template_alloc"
+	maxSize := 2
+	err = registerPoolInDB(conn, poolName, templateDB, maxSize)
+	require.NoError(t, err)
+
+	// Get current process ID
+	processID := os.Getpid()
+
+	t.Run("AcquireFirstDatabase", func(t *testing.T) {
+		// Acquire a database when pool is empty
+		dbInfo, err := acquireDatabaseFromDB(conn, poolName, processID)
+		require.NoError(t, err)
+		require.NotNil(t, dbInfo)
+		require.Equal(t, poolName, dbInfo.poolName)
+		require.True(t, dbInfo.inUse)
+		require.Equal(t, processID, dbInfo.processID)
+		require.NotEmpty(t, dbInfo.databaseName)
+		require.True(t, strings.HasPrefix(dbInfo.databaseName, "testdb_"))
+
+		// Verify database is marked as in use in DB
+		var inUse bool
+		err = conn.QueryRow(ctx, `
+			SELECT in_use FROM testdbpool_databases 
+			WHERE database_name = $1
+		`, dbInfo.databaseName).Scan(&inUse)
+		require.NoError(t, err)
+		require.True(t, inUse)
+	})
+
+	t.Run("ReleaseDatabase", func(t *testing.T) {
+		// First acquire a database
+		dbInfo, err := acquireDatabaseFromDB(conn, poolName, processID)
+		require.NoError(t, err)
+		dbName := dbInfo.databaseName
+
+		// Release it
+		err = releaseDatabaseInDB(conn, dbName)
+		require.NoError(t, err)
+
+		// Verify it's marked as not in use
+		var inUse bool
+		var procID *int
+		err = conn.QueryRow(ctx, `
+			SELECT in_use, process_id FROM testdbpool_databases 
+			WHERE database_name = $1
+		`, dbName).Scan(&inUse, &procID)
+		require.NoError(t, err)
+		require.False(t, inUse)
+		require.Nil(t, procID)
+	})
+
+	t.Run("ReuseReleasedDatabase", func(t *testing.T) {
+		// Clean up and start fresh
+		_, err = conn.Exec(ctx, "DELETE FROM testdbpool_databases WHERE pool_name = $1", poolName)
+		require.NoError(t, err)
+
+		// Acquire and release a database
+		dbInfo1, err := acquireDatabaseFromDB(conn, poolName, processID)
+		require.NoError(t, err)
+		dbName1 := dbInfo1.databaseName
+
+		err = releaseDatabaseInDB(conn, dbName1)
+		require.NoError(t, err)
+
+		// Acquire again - should reuse the same database
+		dbInfo2, err := acquireDatabaseFromDB(conn, poolName, processID)
+		require.NoError(t, err)
+		require.Equal(t, dbName1, dbInfo2.databaseName)
+	})
+
+	t.Run("MaxSizeEnforcement", func(t *testing.T) {
+		// Clean up
+		_, err = conn.Exec(ctx, "DELETE FROM testdbpool_databases WHERE pool_name = $1", poolName)
+		require.NoError(t, err)
+
+		// Acquire databases up to maxSize
+		var acquired []string
+		for i := 0; i < maxSize; i++ {
+			dbInfo, err := acquireDatabaseFromDB(conn, poolName, processID+i)
+			require.NoError(t, err)
+			acquired = append(acquired, dbInfo.databaseName)
+		}
+
+		// Try to acquire one more - should return nil (no available database)
+		dbInfo, err := acquireDatabaseFromDB(conn, poolName, processID+maxSize)
+		require.NoError(t, err)
+		require.Nil(t, dbInfo, "Should return nil when max size reached")
+
+		// Release one
+		err = releaseDatabaseInDB(conn, acquired[0])
+		require.NoError(t, err)
+
+		// Now we should be able to acquire
+		dbInfo, err = acquireDatabaseFromDB(conn, poolName, processID+maxSize)
+		require.NoError(t, err)
+		require.NotNil(t, dbInfo)
+		require.Equal(t, acquired[0], dbInfo.databaseName) // Should reuse the released one
 	})
 }
