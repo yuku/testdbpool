@@ -10,14 +10,6 @@ import (
 	"github.com/yuku/testdbpool/internal"
 )
 
-// dbInfo represents database information stored in database
-type dbInfo struct {
-	poolName     string
-	databaseName string
-	inUse        bool
-	processID    int
-}
-
 func TestEnsureTablesExist(t *testing.T) {
 	ctx := context.Background()
 	conn := internal.GetRootConnection(t)

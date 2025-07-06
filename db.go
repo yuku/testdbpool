@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -12,6 +13,14 @@ type poolInfo struct {
 	poolName         string
 	templateDatabase string
 	maxSize          int
+}
+
+// dbInfo represents database information stored in database
+type dbInfo struct {
+	poolName     string
+	databaseName string
+	inUse        bool
+	processID    int
 }
 
 // ensureTablesExist creates the necessary tables for testdbpool if they don't exist
@@ -102,4 +111,112 @@ func getPoolInfoFromDB(conn *pgx.Conn, poolName string) (*poolInfo, error) {
 	}
 
 	return &info, nil
+}
+
+// acquireDatabaseFromDB acquires an available database from the pool
+func acquireDatabaseFromDB(conn *pgx.Conn, poolName string, processID int) (*dbInfo, error) {
+	ctx := context.Background()
+
+	// Start transaction for atomic operation
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// First, try to find an existing available database
+	var dbName string
+	err = tx.QueryRow(ctx, `
+		SELECT database_name 
+		FROM testdbpool_databases 
+		WHERE pool_name = $1 AND in_use = false
+		LIMIT 1
+		FOR UPDATE
+	`, poolName).Scan(&dbName)
+
+	if err == nil {
+		// Found an available database, mark it as in use
+		_, err = tx.Exec(ctx, `
+			UPDATE testdbpool_databases 
+			SET in_use = true, process_id = $1, last_used_at = CURRENT_TIMESTAMP
+			WHERE database_name = $2
+		`, processID, dbName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update database status: %w", err)
+		}
+	} else if err == pgx.ErrNoRows {
+		// No available database, check if we can create a new one
+		var poolInfo poolInfo
+		err = tx.QueryRow(ctx, `
+			SELECT pool_name, template_database, max_size 
+			FROM testdbpool_registry 
+			WHERE pool_name = $1
+		`, poolName).Scan(&poolInfo.poolName, &poolInfo.templateDatabase, &poolInfo.maxSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pool info: %w", err)
+		}
+
+		// Count current databases
+		var count int
+		err = tx.QueryRow(ctx, `
+			SELECT COUNT(*) 
+			FROM testdbpool_databases 
+			WHERE pool_name = $1
+		`, poolName).Scan(&count)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count databases: %w", err)
+		}
+
+		if count >= poolInfo.maxSize {
+			// Max size reached, cannot create new database
+			return nil, nil
+		}
+
+		// Generate new database name
+		dbName = "testdb_" + generateID()
+
+		// Insert new database entry
+		_, err = tx.Exec(ctx, `
+			INSERT INTO testdbpool_databases (pool_name, database_name, in_use, process_id)
+			VALUES ($1, $2, true, $3)
+		`, poolName, dbName, processID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert database entry: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("failed to query available database: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &dbInfo{
+		poolName:     poolName,
+		databaseName: dbName,
+		inUse:        true,
+		processID:    processID,
+	}, nil
+}
+
+// releaseDatabaseInDB releases a database back to the pool
+func releaseDatabaseInDB(conn *pgx.Conn, databaseName string) error {
+	ctx := context.Background()
+
+	_, err := conn.Exec(ctx, `
+		UPDATE testdbpool_databases 
+		SET in_use = false, process_id = NULL
+		WHERE database_name = $1
+	`, databaseName)
+	if err != nil {
+		return fmt.Errorf("failed to release database: %w", err)
+	}
+
+	return nil
+}
+
+// generateID generates a unique ID for database names
+func generateID() string {
+	return uuid.New().String()[:8]
 }
