@@ -2,7 +2,9 @@ package testdbpool
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/google/uuid"
@@ -32,6 +34,7 @@ type sharedPool struct {
 type DatabaseResource struct {
 	dbName string
 	pool   *pgxpool.Pool
+	sqlDB  *sql.DB // Optional SQL DB handle for compatibility
 }
 
 // AcquiredDatabase represents an acquired database that must be released
@@ -107,47 +110,73 @@ func New(config Config) (*Pool, error) {
 
 // newSharedPool creates or gets a shared pool based on PoolName
 func newSharedPool(config Config) (*Pool, error) {
-	sharedPoolsMu.Lock()
-	defer sharedPoolsMu.Unlock()
+	ctx := context.Background()
+	
+	// Ensure database tables exist
+	if err := ensureTablesExist(config.Conn); err != nil {
+		return nil, fmt.Errorf("failed to ensure tables exist: %w", err)
+	}
 
-	// Check if shared pool already exists
+	// Register pool in database
+	templateName := "testdb_template_" + config.PoolName
+	if err := registerPoolInDB(config.Conn, config.PoolName, templateName, config.maxSize()); err != nil {
+		return nil, fmt.Errorf("failed to register pool: %w", err)
+	}
+
+	// Check if we have this pool in memory (for same process)
+	sharedPoolsMu.Lock()
 	if shared, exists := sharedPools[config.PoolName]; exists {
-		// Increment reference count
+		// Increment reference count for in-process tracking
 		shared.refCount++
+		sharedPoolsMu.Unlock()
 		return &Pool{
 			rootConn: config.Conn,
 			poolName: config.PoolName,
 			shared:   shared,
 		}, nil
 	}
+	sharedPoolsMu.Unlock()
 
 	// Create new shared pool
 	shared := &sharedPool{
-		templateName:  "testdb_template_" + config.PoolName,
+		templateName:  templateName,
 		setupTemplate: config.SetupTemplate,
 		resetDatabase: config.ResetDatabase,
 		refCount:      1,
 	}
 
-	// Create pool wrapper for cleanup
+	// Create pool wrapper
 	pool := &Pool{
 		rootConn: config.Conn,
 		poolName: config.PoolName,
 		shared:   shared,
 	}
 
-	// Clean up previous session
-	if err := pool.cleanupPreviousSession(context.Background()); err != nil {
-		return nil, fmt.Errorf("failed to clean up previous session: %w", err)
+	// Setup template if needed
+	shared.templateMu.Lock()
+	if !shared.templateCreated {
+		err := pool.createTemplateDatabase(ctx)
+		if err != nil {
+			shared.templateMu.Unlock()
+			return nil, fmt.Errorf("failed to create template database: %w", err)
+		}
+		shared.templateCreated = true
+	}
+	shared.templateMu.Unlock()
+
+	// Clean up dead processes
+	if _, err := cleanupDeadProcesses(config.Conn); err != nil {
+		// Log error but don't fail - cleanup is best effort
+		fmt.Printf("Warning: failed to cleanup dead processes: %v\n", err)
 	}
 
-	// Create puddle pool configuration
+	// Create puddle pool configuration with DB-aware constructor
 	puddleConfig := &puddle.Config[*DatabaseResource]{
 		Constructor: func(ctx context.Context) (*DatabaseResource, error) {
-			return pool.createDatabaseResource(ctx)
+			return pool.createDatabaseResourceWithDB(ctx)
 		},
 		Destructor: func(resource *DatabaseResource) {
-			pool.destroyDatabaseResource(resource)
+			pool.destroyDatabaseResourceWithDB(resource)
 		},
 		MaxSize: int32(config.maxSize()),
 	}
@@ -159,7 +188,11 @@ func newSharedPool(config Config) (*Pool, error) {
 	}
 
 	shared.resourcePool = puddlePool
+	
+	// Store in memory for this process
+	sharedPoolsMu.Lock()
 	sharedPools[config.PoolName] = shared
+	sharedPoolsMu.Unlock()
 
 	return pool, nil
 }
@@ -339,6 +372,132 @@ func (p *Pool) resetDatabaseResource(ctx context.Context, resource *DatabaseReso
 }
 
 // Acquire gets a database from the pool
+// createDatabaseResourceWithDB creates a new database resource using DB-based allocation
+func (p *Pool) createDatabaseResourceWithDB(ctx context.Context) (*DatabaseResource, error) {
+	// Acquire advisory lock for this pool
+	lockID := getPoolLockID(p.poolName)
+	if err := acquirePoolLock(p.rootConn, lockID); err != nil {
+		return nil, fmt.Errorf("failed to acquire pool lock: %w", err)
+	}
+	defer releasePoolLock(p.rootConn, lockID)
+
+	// Try to acquire a database from DB
+	dbInfo, err := acquireDatabaseFromDB(p.rootConn, p.poolName, os.Getpid())
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire database from DB: %w", err)
+	}
+	if dbInfo == nil {
+		return nil, fmt.Errorf("no available database (max size reached)")
+	}
+
+	// Check if database exists, create if needed
+	var exists bool
+	err = p.rootConn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbInfo.databaseName).Scan(&exists)
+	if err != nil {
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to check if database exists: %w", err)
+	}
+	
+	if !exists {
+		// Create the test database from template
+		templateName := p.templateName
+		if p.shared != nil {
+			templateName = p.shared.templateName
+		}
+		
+		_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", dbInfo.databaseName, templateName))
+		if err != nil {
+			releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+			return nil, fmt.Errorf("failed to create test database: %w", err)
+		}
+	}
+
+	// Connect to the database
+	config := p.rootConn.Config()
+	
+	// Build connection string for the new database
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
+		config.User,
+		config.Password,
+		config.Host,
+		config.Port,
+		dbInfo.databaseName,
+	)
+	
+	// Add SSL mode if present
+	if config.TLSConfig == nil {
+		connStr += "?sslmode=disable"
+	}
+	
+	// Create pgxpool from the connection string
+	poolConfig, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to create pool: %w", err)
+	}
+	
+	// Create sql.DB handle for compatibility (optional, can be nil)
+	var db *sql.DB = nil
+
+	// Test connection
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		db.Close()
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Reset the database
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		pool.Close()
+		db.Close()
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to acquire connection for reset: %w", err)
+	}
+	
+	resetFunc := p.resetDatabase
+	if p.shared != nil {
+		resetFunc = p.shared.resetDatabase
+	}
+	
+	if err := resetFunc(ctx, conn.Conn()); err != nil {
+		conn.Release()
+		pool.Close()
+		db.Close()
+		releaseDatabaseInDB(p.rootConn, dbInfo.databaseName)
+		return nil, fmt.Errorf("failed to reset database: %w", err)
+	}
+	conn.Release()
+
+	return &DatabaseResource{
+		dbName: dbInfo.databaseName,
+		pool:   pool,
+		sqlDB:  db,
+	}, nil
+}
+
+// destroyDatabaseResourceWithDB releases a database resource back to the DB pool
+func (p *Pool) destroyDatabaseResourceWithDB(resource *DatabaseResource) {
+	if resource.pool != nil {
+		resource.pool.Close()
+	}
+	if resource.sqlDB != nil {
+		resource.sqlDB.Close()
+	}
+	
+	// Release in database
+	if err := releaseDatabaseInDB(p.rootConn, resource.dbName); err != nil {
+		fmt.Printf("Warning: failed to release database %s in DB: %v\n", resource.dbName, err)
+	}
+}
+
 func (p *Pool) Acquire() (*AcquiredDatabase, error) {
 	ctx := context.Background()
 
@@ -384,9 +543,23 @@ func (p *Pool) createTemplateDatabase(ctx context.Context) error {
 		setupFunc = p.setupTemplate
 	}
 
-	// Create template database
+	// Check if template database already exists
 	p.rootConnMu.Lock()
-	_, err := p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", templateName))
+	var exists bool
+	err := p.rootConn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", templateName).Scan(&exists)
+	if err != nil {
+		p.rootConnMu.Unlock()
+		return fmt.Errorf("failed to check if template database exists: %w", err)
+	}
+	
+	if exists {
+		p.rootConnMu.Unlock()
+		// Template already exists, nothing to do
+		return nil
+	}
+	
+	// Create template database
+	_, err = p.rootConn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", templateName))
 	if err != nil {
 		p.rootConnMu.Unlock()
 		return fmt.Errorf("failed to create template database: %w", err)
