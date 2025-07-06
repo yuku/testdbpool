@@ -355,7 +355,6 @@ func TestProcessManagement(t *testing.T) {
 		// Acquire lock on first connection
 		err = acquirePoolLock(conn1, lockID)
 		require.NoError(t, err)
-		defer releasePoolLock(conn1, lockID) // Ensure cleanup
 
 		// Try to acquire from second connection - should timeout
 		err = acquirePoolLockWithTimeout(conn2, lockID, 100) // 100ms timeout

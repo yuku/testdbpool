@@ -18,7 +18,7 @@ const poolName = "testdbpool_multi_package"
 func RunTest(t *testing.T) {
 	rootConn := internal.GetRootConnection(t)
 
-	maxSize := 1
+	maxSize := 5
 	dbpool, err := testdbpool.New(testdbpool.Config{
 		PoolName: poolName,
 		Conn:     rootConn,

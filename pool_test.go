@@ -219,7 +219,7 @@ func TestParallelDBPool(t *testing.T) {
 				dbpool1, err := New(Config{
 					PoolName: poolName,
 					Conn:     rootConn,
-					MaxSize:  1,
+					MaxSize:  parallelism, // Allow enough databases for all parallel goroutines
 					SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 						_, err := conn.Exec(ctx, `
 						CREATE TABLE enum_values (

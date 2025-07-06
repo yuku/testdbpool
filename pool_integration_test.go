@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -126,6 +127,14 @@ func main() {
 		Conn:     conn,
 		PoolName: "` + poolName + `",
 		MaxSize:  2,
+		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, "CREATE TABLE test_table (id INT)")
+			return err
+		},
+		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, "TRUNCATE TABLE test_table CASCADE")
+			return err
+		},
 	}
 
 	pool, err := testdbpool.New(config)
@@ -134,7 +143,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	db, err := pool.Acquire(ctx)
+	db, err := pool.Acquire()
 	if err != nil {
 		panic(err)
 	}
@@ -142,8 +151,8 @@ func main() {
 	// Print the database name
 	fmt.Println(db.Pool.Config().ConnConfig.Database)
 	
-	// Hold the database for a moment
-	time.Sleep(100 * time.Millisecond)
+	// Hold the database for 2 seconds to ensure overlap with other process
+	time.Sleep(2 * time.Second)
 	
 	db.Release()
 }
@@ -162,11 +171,32 @@ func main() {
 	cmd2 := exec.Command("go", "run", helperFile)
 	cmd2.Env = append(os.Environ(), "DATABASE_URL="+os.Getenv("DATABASE_URL"))
 
-	output1, err := cmd1.Output()
-	require.NoError(t, err)
+	// Start both processes
+	var output1, output2 []byte
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
 	
-	output2, err := cmd2.Output()
-	require.NoError(t, err)
+	go func() {
+		defer wg.Done()
+		output1, err1 = cmd1.CombinedOutput()
+		if err1 != nil {
+			t.Logf("cmd1 output: %s", output1)
+		}
+	}()
+	
+	go func() {
+		defer wg.Done()
+		output2, err2 = cmd2.CombinedOutput()
+		if err2 != nil {
+			t.Logf("cmd2 output: %s", output2)
+		}
+	}()
+	
+	wg.Wait()
+	
+	require.NoError(t, err1, "cmd1 failed")
+	require.NoError(t, err2, "cmd2 failed")
 
 	dbName1 := string(output1)
 	dbName2 := string(output2)
