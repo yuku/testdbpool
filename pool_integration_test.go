@@ -18,7 +18,7 @@ func TestNewWithDBBasedPoolManagement(t *testing.T) {
 	conn := internal.GetRootConnection(t)
 
 	// Ensure tables exist
-	err := ensureTablesExist(conn)
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Clean up test data
@@ -84,7 +84,7 @@ func TestCrossProcessPoolSharing(t *testing.T) {
 	conn := internal.GetRootConnection(t)
 
 	// Ensure tables exist
-	err := ensureTablesExist(conn)
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Clean up test data

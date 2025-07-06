@@ -25,8 +25,8 @@ type dbInfo struct {
 	processID    int
 }
 
-// ensureTablesExist creates the necessary tables for testdbpool if they don't exist
-func ensureTablesExist(conn *pgx.Conn) error {
+// EnsureTablesExist creates the necessary tables for testdbpool if they don't exist
+func EnsureTablesExist(conn *pgx.Conn) error {
 	ctx := context.Background()
 
 	// Create testdbpool_registry table
@@ -240,6 +240,20 @@ func generateID() string {
 func cleanupDeadProcesses(conn *pgx.Conn) (int, error) {
 	ctx := context.Background()
 
+	// Check if tables exist first
+	var exists bool
+	err := conn.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT FROM information_schema.tables 
+			WHERE table_schema = 'public' 
+			AND table_name = 'testdbpool_databases'
+		)
+	`).Scan(&exists)
+	if err != nil || !exists {
+		// Tables don't exist yet, nothing to clean up
+		return 0, nil
+	}
+
 	// Get all in-use databases with process IDs
 	rows, err := conn.Query(ctx, `
 		SELECT database_name, process_id 
@@ -320,6 +334,10 @@ func acquirePoolLockWithTimeout(conn *pgx.Conn, lockID int64, timeoutMs int) err
 			case <-ticker.C:
 				err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&acquired)
 				if err != nil {
+					// Check if context was cancelled
+					if ctx.Err() != nil {
+						return fmt.Errorf("context cancelled: %w", ctx.Err())
+					}
 					return fmt.Errorf("failed to try advisory lock: %w", err)
 				}
 				if acquired {

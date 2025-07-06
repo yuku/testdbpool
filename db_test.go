@@ -18,8 +18,8 @@ func TestEnsureTablesExist(t *testing.T) {
 	_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS testdbpool_databases")
 	_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS testdbpool_registry")
 
-	// Call ensureTablesExist
-	err := ensureTablesExist(conn)
+	// Call EnsureTablesExist
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Verify testdbpool_registry table exists with correct schema
@@ -67,8 +67,8 @@ func TestEnsureTablesExist(t *testing.T) {
 	require.Equal(t, 7, columnCount, "testdbpool_databases should have all required columns")
 
 	// Test idempotency - calling again should not error
-	err = ensureTablesExist(conn)
-	require.NoError(t, err, "ensureTablesExist should be idempotent")
+	err = EnsureTablesExist(conn)
+	require.NoError(t, err, "EnsureTablesExist should be idempotent")
 }
 
 func TestPoolRegistry(t *testing.T) {
@@ -76,7 +76,7 @@ func TestPoolRegistry(t *testing.T) {
 	conn := internal.GetRootConnection(t)
 
 	// Ensure tables exist
-	err := ensureTablesExist(conn)
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Clean up test data
@@ -153,7 +153,7 @@ func TestDatabaseAllocation(t *testing.T) {
 	conn := internal.GetRootConnection(t)
 
 	// Ensure tables exist
-	err := ensureTablesExist(conn)
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Clean up test data
@@ -269,7 +269,7 @@ func TestProcessManagement(t *testing.T) {
 	conn := internal.GetRootConnection(t)
 
 	// Ensure tables exist
-	err := ensureTablesExist(conn)
+	err := EnsureTablesExist(conn)
 	require.NoError(t, err)
 
 	// Clean up test data

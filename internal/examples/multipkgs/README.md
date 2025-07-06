@@ -19,10 +19,14 @@ For production use, ensure that:
 
 ## Running the Tests
 
-To see the cross-process behavior in action, run:
+The multipkgs tests are skipped by default because they require special coordination between multiple processes. To run them:
+
 ```bash
-# From the root directory
+# Run the multipkgs tests
+TESTDBPOOL_RUN_MULTIPKG_TESTS=1 go test -v ./internal/examples/multipkgs/...
+
+# Or to see the cross-process behavior with the main test
 go test -v -run TestCrossProcessPoolSharing
 ```
 
-This test demonstrates that multiple processes can successfully share a pool and respect MaxSize limits.
+The TestCrossProcessPoolSharing test in the main package demonstrates that multiple processes can successfully share a pool and respect MaxSize limits.

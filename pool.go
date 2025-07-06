@@ -114,7 +114,7 @@ func newSharedPool(config Config) (*Pool, error) {
 	ctx := context.Background()
 	
 	// Ensure database tables exist
-	if err := ensureTablesExist(config.Conn); err != nil {
+	if err := EnsureTablesExist(config.Conn); err != nil {
 		return nil, fmt.Errorf("failed to ensure tables exist: %w", err)
 	}
 
@@ -165,11 +165,8 @@ func newSharedPool(config Config) (*Pool, error) {
 	}
 	shared.templateMu.Unlock()
 
-	// Clean up dead processes
-	if _, err := cleanupDeadProcesses(config.Conn); err != nil {
-		// Log error but don't fail - cleanup is best effort
-		fmt.Printf("Warning: failed to cleanup dead processes: %v\n", err)
-	}
+	// Clean up dead processes (best effort, ignore errors)
+	cleanupDeadProcesses(config.Conn)
 
 	// Create puddle pool configuration with DB-aware constructor
 	puddleConfig := &puddle.Config[*DatabaseResource]{
