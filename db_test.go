@@ -263,3 +263,106 @@ func TestDatabaseAllocation(t *testing.T) {
 		require.Equal(t, acquired[0], dbInfo.databaseName) // Should reuse the released one
 	})
 }
+
+func TestProcessManagement(t *testing.T) {
+	ctx := context.Background()
+	conn := internal.GetRootConnection(t)
+
+	// Ensure tables exist
+	err := ensureTablesExist(conn)
+	require.NoError(t, err)
+
+	// Clean up test data
+	_, err = conn.Exec(ctx, "DELETE FROM testdbpool_databases")
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, "DELETE FROM testdbpool_registry")
+	require.NoError(t, err)
+
+	// Register a test pool
+	poolName := "test_process_pool"
+	templateDB := "testdb_template_process"
+	maxSize := 3
+	err = registerPoolInDB(conn, poolName, templateDB, maxSize)
+	require.NoError(t, err)
+
+	t.Run("CleanupDeadProcesses", func(t *testing.T) {
+		// Simulate dead processes by inserting databases with non-existent process IDs
+		deadPID1 := 99999999
+		deadPID2 := 99999998
+		alivePID := os.Getpid()
+
+		// Insert databases with dead process IDs
+		_, err = conn.Exec(ctx, `
+			INSERT INTO testdbpool_databases (pool_name, database_name, in_use, process_id)
+			VALUES 
+				($1, 'testdb_dead1', true, $2),
+				($1, 'testdb_dead2', true, $3),
+				($1, 'testdb_alive', true, $4)
+		`, poolName, deadPID1, deadPID2, alivePID)
+		require.NoError(t, err)
+
+		// Run cleanup
+		count, err := cleanupDeadProcesses(conn)
+		require.NoError(t, err)
+		require.Equal(t, 2, count, "Should cleanup 2 dead processes")
+
+		// Verify dead process databases are released
+		var inUseCount int
+		err = conn.QueryRow(ctx, `
+			SELECT COUNT(*) FROM testdbpool_databases 
+			WHERE pool_name = $1 AND in_use = true
+		`, poolName).Scan(&inUseCount)
+		require.NoError(t, err)
+		require.Equal(t, 1, inUseCount, "Only alive process database should be in use")
+
+		// Verify the alive process database is still in use
+		var stillInUse bool
+		err = conn.QueryRow(ctx, `
+			SELECT in_use FROM testdbpool_databases 
+			WHERE database_name = 'testdb_alive'
+		`, ).Scan(&stillInUse)
+		require.NoError(t, err)
+		require.True(t, stillInUse)
+	})
+
+	t.Run("IsProcessAlive", func(t *testing.T) {
+		// Test with current process
+		alive := isProcessAlive(os.Getpid())
+		require.True(t, alive, "Current process should be alive")
+
+		// Test with non-existent process
+		alive = isProcessAlive(99999999)
+		require.False(t, alive, "Non-existent process should not be alive")
+	})
+
+	t.Run("AcquireWithAdvisoryLock", func(t *testing.T) {
+		// Clean up
+		_, err = conn.Exec(ctx, "DELETE FROM testdbpool_databases WHERE pool_name = $1", poolName)
+		require.NoError(t, err)
+
+		// Use advisory lock for pool operations
+		lockID := getPoolLockID(poolName)
+	
+		// Acquire lock
+		err = acquirePoolLock(conn, lockID)
+		require.NoError(t, err)
+
+		// Try to acquire from another connection - should timeout
+		conn2 := internal.GetRootConnection(t)
+		defer conn2.Close(context.Background())
+
+		err = acquirePoolLockWithTimeout(conn2, lockID, 100) // 100ms timeout
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "timeout")
+
+		// Release lock
+		err = releasePoolLock(conn, lockID)
+		require.NoError(t, err)
+
+		// Now should be able to acquire from conn2
+		err = acquirePoolLock(conn2, lockID)
+		require.NoError(t, err)
+		err = releasePoolLock(conn2, lockID)
+		require.NoError(t, err)
+	})
+}
