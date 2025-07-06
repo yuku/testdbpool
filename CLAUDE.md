@@ -2,7 +2,7 @@
 
 ## Test Commands
 
-- Run all tests: `go test -v`
+- Run all tests: `go test -v ./...`
 - Run single test: `go test -run '^TestName$'` (example: `go test -run '^TestAcquire$'`)
 
 ## Development Principles
