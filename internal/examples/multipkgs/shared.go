@@ -107,7 +107,12 @@ func RunTest(t *testing.T) {
 
 	require.NoError(t, g.Wait(), "error during parallel acquisition")
 
-	rows, err := rootConn.Query(context.Background(), "SELECT datname FROM pg_database WHERE datname LIKE 'testdb_%' AND datname <> 'testdb_template';")
+	// Query databases for this specific pool from testdbpool_databases table
+	rows, err := rootConn.Query(context.Background(), `
+		SELECT database_name 
+		FROM testdbpool_databases 
+		WHERE pool_name = $1
+	`, poolName)
 	require.NoError(t, err, "failed to query databases")
 	defer rows.Close()
 

@@ -82,13 +82,26 @@ func registerPoolInDB(conn *pgx.Conn, poolName, templateDatabase string, maxSize
 		return nil
 	}
 
-	// Insert new pool
+	// Insert new pool with ON CONFLICT to handle concurrent registrations
 	_, err = conn.Exec(ctx, `
 		INSERT INTO testdbpool_registry (pool_name, template_database, max_size)
 		VALUES ($1, $2, $3)
+		ON CONFLICT (pool_name) DO NOTHING
 	`, poolName, templateDatabase, maxSize)
 	if err != nil {
 		return fmt.Errorf("failed to register pool: %w", err)
+	}
+	
+	// Check if we actually inserted or if another process beat us
+	existing, err = getPoolInfoFromDB(conn, poolName)
+	if err != nil {
+		return fmt.Errorf("failed to check pool after insert: %w", err)
+	}
+	
+	if existing != nil && (existing.templateDatabase != templateDatabase || existing.maxSize != maxSize) {
+		// Another process registered with different config
+		return fmt.Errorf("pool configuration mismatch for %s: existing(template=%s, maxSize=%d) vs new(template=%s, maxSize=%d)",
+			poolName, existing.templateDatabase, existing.maxSize, templateDatabase, maxSize)
 	}
 
 	return nil
