@@ -8,13 +8,6 @@ import (
 	"github.com/yuku/testdbpool/internal"
 )
 
-// poolInfo represents pool information stored in database
-type poolInfo struct {
-	poolName         string
-	templateDatabase string
-	maxSize          int
-}
-
 func TestEnsureTablesExist(t *testing.T) {
 	ctx := context.Background()
 	conn := internal.GetRootConnection(t)
