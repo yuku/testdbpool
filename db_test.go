@@ -343,20 +343,27 @@ func TestProcessManagement(t *testing.T) {
 		// Use advisory lock for pool operations
 		lockID := getPoolLockID(poolName)
 	
-		// Acquire lock
-		err = acquirePoolLock(conn, lockID)
+		// Create two connections manually for this test
+		conn1, err := internal.GetRootConnectionNoCleanup(t)
 		require.NoError(t, err)
+		defer conn1.Close(ctx)
+		
+		conn2, err := internal.GetRootConnectionNoCleanup(t)
+		require.NoError(t, err)
+		defer conn2.Close(ctx)
 
-		// Try to acquire from another connection - should timeout
-		conn2 := internal.GetRootConnection(t)
-		defer conn2.Close(context.Background())
+		// Acquire lock on first connection
+		err = acquirePoolLock(conn1, lockID)
+		require.NoError(t, err)
+		defer releasePoolLock(conn1, lockID) // Ensure cleanup
 
+		// Try to acquire from second connection - should timeout
 		err = acquirePoolLockWithTimeout(conn2, lockID, 100) // 100ms timeout
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "timeout")
 
-		// Release lock
-		err = releasePoolLock(conn, lockID)
+		// Release lock from first connection
+		err = releasePoolLock(conn1, lockID)
 		require.NoError(t, err)
 
 		// Now should be able to acquire from conn2

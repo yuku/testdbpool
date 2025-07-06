@@ -16,3 +16,7 @@
   - Note: Developers may write tests. In such cases, Claude Code's job is to implement code that makes the developer's tests pass.
   - **IMPORTANT**: When a failing test exists, ALWAYS commit it before starting implementation
   - **IMPORTANT**: After implementing code, ALWAYS run the test to confirm it passes before committing
+
+## Platform Support
+
+- Support Linux only. No need to support Windows.

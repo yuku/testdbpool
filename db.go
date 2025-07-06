@@ -3,6 +3,8 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -219,4 +221,110 @@ func releaseDatabaseInDB(conn *pgx.Conn, databaseName string) error {
 // generateID generates a unique ID for database names
 func generateID() string {
 	return uuid.New().String()[:8]
+}
+
+// cleanupDeadProcesses releases databases held by dead processes
+func cleanupDeadProcesses(conn *pgx.Conn) (int, error) {
+	ctx := context.Background()
+
+	// Get all in-use databases with process IDs
+	rows, err := conn.Query(ctx, `
+		SELECT database_name, process_id 
+		FROM testdbpool_databases 
+		WHERE in_use = true AND process_id IS NOT NULL
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query in-use databases: %w", err)
+	}
+	defer rows.Close()
+
+	var deadDatabases []string
+	for rows.Next() {
+		var dbName string
+		var processID int
+		if err := rows.Scan(&dbName, &processID); err != nil {
+			return 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		if !isProcessAlive(processID) {
+			deadDatabases = append(deadDatabases, dbName)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	// Release databases from dead processes
+	for _, dbName := range deadDatabases {
+		if err := releaseDatabaseInDB(conn, dbName); err != nil {
+			return len(deadDatabases), fmt.Errorf("failed to release database %s: %w", dbName, err)
+		}
+	}
+
+	return len(deadDatabases), nil
+}
+
+
+// getPoolLockID generates a unique lock ID for a pool name
+func getPoolLockID(poolName string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte("testdbpool:" + poolName))
+	// PostgreSQL advisory locks use bigint, ensure positive value
+	return int64(h.Sum64() & 0x7FFFFFFFFFFFFFFF)
+}
+
+// acquirePoolLock acquires an advisory lock for pool operations
+func acquirePoolLock(conn *pgx.Conn, lockID int64) error {
+	ctx := context.Background()
+	_, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", lockID)
+	if err != nil {
+		return fmt.Errorf("failed to acquire advisory lock: %w", err)
+	}
+	return nil
+}
+
+// acquirePoolLockWithTimeout tries to acquire an advisory lock with timeout
+func acquirePoolLockWithTimeout(conn *pgx.Conn, lockID int64, timeoutMs int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
+	var acquired bool
+	err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&acquired)
+	if err != nil {
+		return fmt.Errorf("failed to try advisory lock: %w", err)
+	}
+
+	if !acquired {
+		// Wait for lock with timeout
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("timeout acquiring lock")
+			case <-ticker.C:
+				err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", lockID).Scan(&acquired)
+				if err != nil {
+					return fmt.Errorf("failed to try advisory lock: %w", err)
+				}
+				if acquired {
+					return nil
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// releasePoolLock releases an advisory lock
+func releasePoolLock(conn *pgx.Conn, lockID int64) error {
+	ctx := context.Background()
+	_, err := conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", lockID)
+	if err != nil {
+		return fmt.Errorf("failed to release advisory lock: %w", err)
+	}
+	return nil
 }
