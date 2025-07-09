@@ -73,4 +73,97 @@ func TestPoolIntegration(t *testing.T) {
 			t.Error("test_table should exist")
 		}
 	})
+
+	// Test multiple acquire/release cycles
+	t.Run("MultipleAcquireRelease", func(t *testing.T) {
+		// Acquire all available databases
+		var dbs []*testdbpool.TestDB
+		for i := 0; i < config.MaxDatabases; i++ {
+			db, err := testPool.Acquire(ctx)
+			if err != nil {
+				t.Fatalf("failed to acquire database %d: %v", i, err)
+			}
+			dbs = append(dbs, db)
+		}
+
+		// Verify each database is unique
+		seen := make(map[string]bool)
+		for i, db := range dbs {
+			if seen[db.DatabaseName()] {
+				t.Errorf("database %d has duplicate name: %s", i, db.DatabaseName())
+			}
+			seen[db.DatabaseName()] = true
+		}
+
+		// Release all databases
+		for _, db := range dbs {
+			if err := db.Release(ctx); err != nil {
+				t.Fatalf("failed to release database: %v", err)
+			}
+		}
+
+		// Acquire again to verify reuse
+		db, err := testPool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to re-acquire database: %v", err)
+		}
+		defer db.Close()
+
+		// Verify it's one of the previously used databases
+		if !seen[db.DatabaseName()] {
+			t.Errorf("expected reused database, got new one: %s", db.DatabaseName())
+		}
+	})
+
+	// Test reset functionality
+	t.Run("ResetDatabase", func(t *testing.T) {
+		db, err := testPool.Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire database: %v", err)
+		}
+		defer db.Close()
+
+		// Insert data
+		_, err = db.Conn().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
+		if err != nil {
+			t.Fatalf("failed to insert: %v", err)
+		}
+
+		// Verify data exists
+		var count int
+		err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count)
+		if err != nil {
+			t.Fatalf("failed to count: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("expected 1 row, got %d", count)
+		}
+
+		// Release and re-acquire
+		dbName := db.DatabaseName()
+		db.Release(ctx)
+
+		// Try to acquire the same database again
+		for i := 0; i < config.MaxDatabases; i++ {
+			db2, err := testPool.Acquire(ctx)
+			if err != nil {
+				t.Fatalf("failed to re-acquire: %v", err)
+			}
+			
+			if db2.DatabaseName() == dbName {
+				// Found the same database, verify it was reset
+				var count2 int
+				err = db2.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count2)
+				if err != nil {
+					t.Fatalf("failed to count after reset: %v", err)
+				}
+				if count2 != 0 {
+					t.Errorf("expected 0 rows after reset, got %d", count2)
+				}
+				db2.Release(ctx)
+				break
+			}
+			db2.Release(ctx)
+		}
+	})
 }
