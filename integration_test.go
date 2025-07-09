@@ -149,7 +149,7 @@ func TestPoolIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to re-acquire: %v", err)
 			}
-			
+
 			if db2.DatabaseName() == dbName {
 				// Found the same database, verify it was reset
 				var count2 int
@@ -167,3 +167,4 @@ func TestPoolIntegration(t *testing.T) {
 		}
 	})
 }
+

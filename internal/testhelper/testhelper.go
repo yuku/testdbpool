@@ -54,3 +54,4 @@ func GetTestConn(t *testing.T) *pgx.Conn {
 
 	return conn
 }
+

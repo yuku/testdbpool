@@ -34,8 +34,9 @@ func (td *TestDB) Release(ctx context.Context) error {
 		if err := td.pool.config.ResetDatabase(ctx, td.conn); err != nil {
 			// Log error but continue with release
 			// In production, you might want to handle this differently
+			_ = err // explicitly ignore error
 		}
-		td.conn.Close(ctx)
+		_ = td.conn.Close(ctx)
 		td.conn = nil
 	}
 
@@ -55,3 +56,4 @@ func (td *TestDB) Release(ctx context.Context) error {
 func (td *TestDB) Close() error {
 	return td.Release(context.Background())
 }
+

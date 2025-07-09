@@ -9,3 +9,4 @@ func TestNew(t *testing.T) {
 	// We'll need to set up a real database connection for integration tests
 	t.Skip("Integration test - requires database connection")
 }
+

@@ -75,17 +75,17 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 
 	// Get or create database for this index
 	dbName := p.getDatabaseName(resource.Index())
-	
+
 	// Ensure database exists
 	if err := p.ensureDatabaseExists(ctx, dbName); err != nil {
-		resource.Release(ctx)
+		_ = resource.Release(ctx)
 		return nil, fmt.Errorf("failed to ensure database exists: %w", err)
 	}
-	
+
 	// Connect to the database
 	conn, err := p.connectToDatabase(ctx, dbName)
 	if err != nil {
-		resource.Release(ctx)
+		_ = resource.Release(ctx)
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
@@ -124,7 +124,7 @@ func (p *Pool) setupTemplateDatabase(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to connect to template database: %w", err)
 		}
-		defer templateConn.Close(ctx)
+		defer func() { _ = templateConn.Close(ctx) }()
 
 		// Run setup function
 		if err := p.config.SetupTemplate(ctx, templateConn); err != nil {
@@ -172,7 +172,7 @@ func (p *Pool) ensureDatabaseExists(ctx context.Context, dbName string) error {
 
 	if !exists {
 		// Create database from template
-		_, err = conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s", 
+		_, err = conn.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s",
 			pgx.Identifier{dbName}.Sanitize(),
 			pgx.Identifier{p.templateDB}.Sanitize()))
 		if err != nil {
@@ -198,3 +198,4 @@ func (p *Pool) Close() error {
 	// Resources are automatically cleaned up when processes die
 	return nil
 }
+
