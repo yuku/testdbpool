@@ -37,7 +37,6 @@ func TestPoolConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	defer testPool.Close()
 
 	// Test concurrent acquisition
 	t.Run("ConcurrentAcquire", func(t *testing.T) {
@@ -55,7 +54,7 @@ func TestPoolConcurrency(t *testing.T) {
 					errors <- err
 					return
 				}
-				defer db.Close()
+				defer func() { _ = db.Close() }()
 
 				// Do some work
 				_, err = db.Conn().Exec(ctx, "INSERT INTO concurrent_test (worker_id) VALUES ($1)", workerID)
@@ -112,7 +111,7 @@ func TestPoolConcurrency(t *testing.T) {
 		}
 
 		// Release one database
-		dbs[0].Release(ctx)
+		_ = dbs[0].Release(ctx)
 		dbs = dbs[1:]
 
 		// Now acquire should succeed
@@ -120,11 +119,11 @@ func TestPoolConcurrency(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to acquire after release: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Clean up
 		for _, db := range dbs {
-			db.Release(ctx)
+			_ = db.Release(ctx)
 		}
 	})
 }

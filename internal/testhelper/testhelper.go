@@ -25,9 +25,7 @@ func GetTestDBPool(t *testing.T) *pgxpool.Pool {
 		t.Fatalf("failed to create connection pool: %v", err)
 	}
 
-	t.Cleanup(func() {
-		pool.Close()
-	})
+	// No need to close the pool - numpool handles cleanup automatically
 
 	return pool
 }
@@ -49,7 +47,7 @@ func GetTestConn(t *testing.T) *pgx.Conn {
 	}
 
 	t.Cleanup(func() {
-		conn.Close(ctx)
+		_ = conn.Close(ctx)
 	})
 
 	return conn

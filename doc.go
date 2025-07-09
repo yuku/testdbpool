@@ -26,7 +26,6 @@
 //	if err != nil {
 //	    // handle error
 //	}
-//	defer pool.Close()
 //
 //	db, err := pool.Acquire(ctx)
 //	if err != nil {

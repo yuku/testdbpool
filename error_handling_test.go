@@ -46,7 +46,6 @@ func TestErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// Acquire database successfully
 		db, err := testPool.Acquire(ctx)
@@ -82,7 +81,6 @@ func TestErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// This test mainly verifies that the pool handles connection errors gracefully
 		// In a real scenario, this might happen if the database is temporarily unavailable
@@ -102,7 +100,7 @@ func TestErrorHandling(t *testing.T) {
 			t.Errorf("expected 1, got %d", result)
 		}
 
-		db.Close()
+		_ = db.Close()
 	})
 
 	t.Run("ContextCancellation", func(t *testing.T) {
@@ -123,7 +121,6 @@ func TestErrorHandling(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// Acquire the only database
 		db1, err := testPool.Acquire(ctx)
@@ -142,13 +139,13 @@ func TestErrorHandling(t *testing.T) {
 		}
 
 		// Release the first database
-		db1.Close()
+		_ = db1.Close()
 
 		// Now acquire should work with valid context
 		db2, err := testPool.Acquire(ctx)
 		if err != nil {
 			t.Fatalf("failed to acquire after release: %v", err)
 		}
-		db2.Close()
+		_ = db2.Close()
 	})
 }

@@ -96,14 +96,13 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// Test the complex schema
 		db, err := testPool.Acquire(ctx)
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Test enum type
 		_, err = db.Conn().Exec(ctx, `
@@ -214,20 +213,19 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// Test that separate database instances are truly isolated
 		db1, err := testPool.Acquire(ctx)
 		if err != nil {
 			t.Fatalf("failed to acquire database 1: %v", err)
 		}
-		defer db1.Close()
+		defer func() { _ = db1.Close() }()
 
 		db2, err := testPool.Acquire(ctx)
 		if err != nil {
 			t.Fatalf("failed to acquire database 2: %v", err)
 		}
-		defer db2.Close()
+		defer func() { _ = db2.Close() }()
 
 		// Verify they are different databases
 		if db1.DatabaseName() == db2.DatabaseName() {

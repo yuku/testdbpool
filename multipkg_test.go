@@ -62,11 +62,10 @@ func TestMultiplePoolConnections(t *testing.T) {
 		ResetDatabase: resetDatabase,
 	}
 
-	initialPool, err := testdbpool.New(ctx, initialConfig)
+	_, err := testdbpool.New(ctx, initialConfig)
 	if err != nil {
 		t.Fatalf("failed to create initial pool: %v", err)
 	}
-	defer initialPool.Close()
 
 	// Simulate multiple packages each creating their own pool instance sequentially
 	// In real scenarios, go test runs packages sequentially, not concurrently
@@ -95,7 +94,6 @@ func TestMultiplePoolConnections(t *testing.T) {
 			if err != nil {
 				errors = append(errors, fmt.Errorf("package %d test %d: failed to acquire: %w", 
 					pkg, test, err))
-				pool.Close()
 				break
 			}
 
@@ -103,13 +101,13 @@ func TestMultiplePoolConnections(t *testing.T) {
 			var count int
 			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
 			if err != nil {
-				db.Close()
+				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: query failed: %w", 
 					pkg, test, err))
 				continue
 			}
 			if count != 3 {
-				db.Close()
+				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: expected 3 enum values, got %d", 
 					pkg, test, count))
 				continue
@@ -119,7 +117,7 @@ func TestMultiplePoolConnections(t *testing.T) {
 			_, err = db.Conn().Exec(ctx, 
 				"INSERT INTO entities (enum_value) VALUES ($1)", "value1")
 			if err != nil {
-				db.Close()
+				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: insert failed: %w", 
 					pkg, test, err))
 				continue
@@ -128,13 +126,13 @@ func TestMultiplePoolConnections(t *testing.T) {
 			// Verify data was inserted
 			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
 			if err != nil {
-				db.Close()
+				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: count query failed: %w", 
 					pkg, test, err))
 				continue
 			}
 			if count != 1 {
-				db.Close()
+				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: expected 1 entity, got %d", 
 					pkg, test, count))
 				continue
@@ -143,10 +141,9 @@ func TestMultiplePoolConnections(t *testing.T) {
 			t.Logf("Package %d, Test %d completed successfully with DB %s", 
 				pkg, test, db.DatabaseName())
 			
-			db.Close()
+			_ = db.Close()
 		}
 
-		pool.Close()
 	}
 
 	// Check for errors
@@ -192,7 +189,6 @@ func TestConcurrentPoolAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	defer testPool.Close()
 
 	// Track database usage
 	dbUsage := make(map[string][]int) // dbName -> []workerIDs
@@ -212,7 +208,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 				errors <- err
 				return
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// Track which worker used which database
 			mu.Lock()

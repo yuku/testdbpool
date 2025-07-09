@@ -38,7 +38,6 @@ func TestWithDatabase(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    defer pool.Close()
     
     // Configure the test database pool
     config := &testdbpool.Config{
@@ -74,7 +73,6 @@ func TestWithDatabase(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    defer testPool.Close()
     
     // Acquire a test database
     db, err := testPool.Acquire(ctx)

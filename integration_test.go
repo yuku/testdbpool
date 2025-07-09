@@ -38,7 +38,6 @@ func TestPoolIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	defer testPool.Close()
 
 	// Test acquiring a database
 	t.Run("Acquire", func(t *testing.T) {
@@ -46,7 +45,7 @@ func TestPoolIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Verify we can use the connection
 		var result int
@@ -107,7 +106,7 @@ func TestPoolIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to re-acquire database: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Verify it's one of the previously used databases
 		if !seen[db.DatabaseName()] {
@@ -121,7 +120,7 @@ func TestPoolIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		// Insert data
 		_, err = db.Conn().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
@@ -141,7 +140,7 @@ func TestPoolIntegration(t *testing.T) {
 
 		// Release and re-acquire
 		dbName := db.DatabaseName()
-		db.Release(ctx)
+		_ = db.Release(ctx)
 
 		// Try to acquire the same database again
 		for range config.MaxDatabases {
@@ -160,10 +159,10 @@ func TestPoolIntegration(t *testing.T) {
 				if count2 != 0 {
 					t.Errorf("expected 0 rows after reset, got %d", count2)
 				}
-				db2.Release(ctx)
+				_ = db2.Release(ctx)
 				break
 			}
-			db2.Release(ctx)
+			_ = db2.Release(ctx)
 		}
 	})
 }

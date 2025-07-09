@@ -194,11 +194,3 @@ func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgx.Conn,
 
 	return pgx.ConnectConfig(ctx, config)
 }
-
-// Close closes the pool and cleans up resources.
-func (p *Pool) Close() error {
-	// numpool doesn't have a Close method
-	// Resources are automatically cleaned up when processes die
-	return nil
-}
-

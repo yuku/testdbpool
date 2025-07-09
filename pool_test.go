@@ -33,7 +33,6 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		// Verify pool was created
 		if testPool.config != config {
@@ -86,7 +85,6 @@ func TestNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		defer testPool.Close()
 
 		expectedTemplate := "testdb_template_" + poolID
 		if testPool.templateDB != expectedTemplate {
