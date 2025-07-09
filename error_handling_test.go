@@ -90,8 +90,14 @@ func TestErrorHandling(t *testing.T) {
 		}
 
 		// Verify connection works
+		conn, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+		
 		var result int
-		err = db.Conn().QueryRow(ctx, "SELECT 1").Scan(&result)
+		err = conn.Conn().QueryRow(ctx, "SELECT 1").Scan(&result)
 		if err != nil {
 			t.Fatalf("database connection failed: %v", err)
 		}

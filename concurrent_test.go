@@ -57,7 +57,14 @@ func TestPoolConcurrency(t *testing.T) {
 				defer func() { _ = db.Close() }()
 
 				// Do some work
-				_, err = db.Conn().Exec(ctx, "INSERT INTO concurrent_test (worker_id) VALUES ($1)", workerID)
+				conn, err := db.Pool().Acquire(ctx)
+				if err != nil {
+					errors <- err
+					return
+				}
+				defer conn.Release()
+				
+				_, err = conn.Conn().Exec(ctx, "INSERT INTO concurrent_test (worker_id) VALUES ($1)", workerID)
 				if err != nil {
 					errors <- err
 					return

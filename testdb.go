@@ -3,7 +3,7 @@ package testdbpool
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
 )
 
@@ -11,13 +11,13 @@ import (
 type TestDB struct {
 	pool     *Pool
 	resource *numpool.Resource
-	conn     *pgx.Conn
+	dbPool   *pgxpool.Pool
 	dbName   string
 }
 
-// Conn returns the database connection for this test database.
-func (td *TestDB) Conn() *pgx.Conn {
-	return td.conn
+// Pool returns the database connection pool for this test database.
+func (td *TestDB) Pool() *pgxpool.Pool {
+	return td.dbPool
 }
 
 // DatabaseName returns the name of the test database.
@@ -28,16 +28,21 @@ func (td *TestDB) DatabaseName() string {
 // Release releases the test database back to the pool after resetting it.
 // This method should be called when the test is complete, typically using defer.
 func (td *TestDB) Release(ctx context.Context) error {
-	// Close the connection first
-	if td.conn != nil {
-		// Reset database before releasing
-		if err := td.pool.config.ResetDatabase(ctx, td.conn); err != nil {
-			// Log error but continue with release
-			// In production, you might want to handle this differently
-			_ = err // explicitly ignore error
+	// Reset and close the pool
+	if td.dbPool != nil {
+		// Get a connection from the pool for reset
+		conn, err := td.dbPool.Acquire(ctx)
+		if err == nil {
+			// Reset database before releasing
+			if err := td.pool.config.ResetDatabase(ctx, conn.Conn()); err != nil {
+				// Log error but continue with release
+				// In production, you might want to handle this differently
+				_ = err // explicitly ignore error
+			}
+			conn.Release()
 		}
-		_ = td.conn.Close(ctx)
-		td.conn = nil
+		td.dbPool.Close()
+		td.dbPool = nil
 	}
 
 	// Release the resource back to numpool

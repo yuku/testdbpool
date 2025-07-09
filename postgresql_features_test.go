@@ -105,7 +105,13 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Test enum type
-		_, err = db.Conn().Exec(ctx, `
+		conn, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+		
+		_, err = conn.Conn().Exec(ctx, `
 			INSERT INTO users (email, status, metadata) 
 			VALUES ('test@example.com', 'active', '{"role": "admin", "preferences": {"theme": "dark"}}')
 		`)
@@ -115,7 +121,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 
 		// Test JSONB query
 		var role string
-		err = db.Conn().QueryRow(ctx, `
+		err = conn.Conn().QueryRow(ctx, `
 			SELECT metadata->>'role' FROM users WHERE email = 'test@example.com'
 		`).Scan(&role)
 		if err != nil {
@@ -126,7 +132,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		// Test array operations
-		_, err = db.Conn().Exec(ctx, `
+		_, err = conn.Conn().Exec(ctx, `
 			INSERT INTO posts (user_id, title, content, tags)
 			SELECT id, 'Test Post', 'Content here', ARRAY['tech', 'golang', 'database']
 			FROM users WHERE email = 'test@example.com'
@@ -138,7 +144,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		// Test view
 		var email, title string
 		var tagCount *int
-		err = db.Conn().QueryRow(ctx, `
+		err = conn.Conn().QueryRow(ctx, `
 			SELECT email, title, tag_count FROM active_user_posts LIMIT 1
 		`).Scan(&email, &title, &tagCount)
 		if err != nil {
@@ -153,7 +159,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 
 		// Test trigger (modification timestamp should update)
 		var oldModified string
-		err = db.Conn().QueryRow(ctx, `
+		err = conn.Conn().QueryRow(ctx, `
 			SELECT modified::text FROM users WHERE email = 'test@example.com'
 		`).Scan(&oldModified)
 		if err != nil {
@@ -161,7 +167,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		// Update and verify trigger worked
-		_, err = db.Conn().Exec(ctx, `
+		_, err = conn.Conn().Exec(ctx, `
 			UPDATE users SET status = 'inactive' WHERE email = 'test@example.com'
 		`)
 		if err != nil {
@@ -169,7 +175,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		var newModified string
-		err = db.Conn().QueryRow(ctx, `
+		err = conn.Conn().QueryRow(ctx, `
 			SELECT modified::text FROM users WHERE email = 'test@example.com'
 		`).Scan(&newModified)
 		if err != nil {
@@ -233,14 +239,26 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		// Modify data in db1
-		_, err = db1.Conn().Exec(ctx, "UPDATE accounts SET balance = 999.00 WHERE name = 'Alice'")
+		conn1, err := db1.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection from db1: %v", err)
+		}
+		defer conn1.Release()
+		
+		_, err = conn1.Conn().Exec(ctx, "UPDATE accounts SET balance = 999.00 WHERE name = 'Alice'")
 		if err != nil {
 			t.Fatalf("failed to update Alice in db1: %v", err)
 		}
 
 		// Check that db2 is unaffected (different database)
+		conn2, err := db2.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection from db2: %v", err)
+		}
+		defer conn2.Release()
+		
 		var aliceBalance float64
-		err = db2.Conn().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
+		err = conn2.Conn().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
 		if err != nil {
 			t.Fatalf("failed to query Alice balance in db2: %v", err)
 		}
@@ -249,7 +267,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		// Verify db1 has the changed value
-		err = db1.Conn().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
+		err = conn1.Conn().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
 		if err != nil {
 			t.Fatalf("failed to query Alice balance in db1: %v", err)
 		}

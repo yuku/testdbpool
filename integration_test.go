@@ -48,8 +48,14 @@ func TestPoolIntegration(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Verify we can use the connection
+		conn, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+		
 		var result int
-		err = db.Conn().QueryRow(ctx, "SELECT 1").Scan(&result)
+		err = conn.Conn().QueryRow(ctx, "SELECT 1").Scan(&result)
 		if err != nil {
 			t.Fatalf("failed to query: %v", err)
 		}
@@ -59,7 +65,7 @@ func TestPoolIntegration(t *testing.T) {
 
 		// Verify the test table exists
 		var exists bool
-		err = db.Conn().QueryRow(ctx, `
+		err = conn.Conn().QueryRow(ctx, `
 			SELECT EXISTS (
 				SELECT FROM information_schema.tables 
 				WHERE table_name = 'test_table'
@@ -123,14 +129,20 @@ func TestPoolIntegration(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Insert data
-		_, err = db.Conn().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
+		conn, err := db.Pool().Acquire(ctx)
+		if err != nil {
+			t.Fatalf("failed to acquire connection: %v", err)
+		}
+		defer conn.Release()
+		
+		_, err = conn.Conn().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
 		if err != nil {
 			t.Fatalf("failed to insert: %v", err)
 		}
 
 		// Verify data exists
 		var count int
-		err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count)
+		err = conn.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count)
 		if err != nil {
 			t.Fatalf("failed to count: %v", err)
 		}
@@ -151,8 +163,14 @@ func TestPoolIntegration(t *testing.T) {
 
 			if db2.DatabaseName() == dbName {
 				// Found the same database, verify it was reset
+				conn2, err := db2.Pool().Acquire(ctx)
+				if err != nil {
+					t.Fatalf("failed to acquire connection: %v", err)
+				}
+				defer conn2.Release()
+				
 				var count2 int
-				err = db2.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count2)
+				err = conn2.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count2)
 				if err != nil {
 					t.Fatalf("failed to count after reset: %v", err)
 				}

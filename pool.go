@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
 )
 
@@ -86,7 +87,7 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 	}
 
 	// Connect to the database
-	conn, err := p.connectToDatabase(ctx, dbName)
+	dbPool, err := p.connectToDatabase(ctx, dbName)
 	if err != nil {
 		_ = resource.Release(ctx)
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
@@ -95,7 +96,7 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 	return &TestDB{
 		pool:     p,
 		resource: resource,
-		conn:     conn,
+		dbPool:   dbPool,
 		dbName:   dbName,
 	}, nil
 }
@@ -123,14 +124,21 @@ func (p *Pool) setupTemplateDatabase(ctx context.Context) error {
 		}
 
 		// Connect to template database to set it up
-		templateConn, err := p.connectToDatabase(ctx, p.templateDB)
+		templatePool, err := p.connectToDatabase(ctx, p.templateDB)
 		if err != nil {
 			return fmt.Errorf("failed to connect to template database: %w", err)
 		}
-		defer func() { _ = templateConn.Close(ctx) }()
+		defer templatePool.Close()
+
+		// Get a connection for setup
+		conn, err := templatePool.Acquire(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to acquire connection for setup: %w", err)
+		}
+		defer conn.Release()
 
 		// Run setup function
-		if err := p.config.SetupTemplate(ctx, templateConn); err != nil {
+		if err := p.config.SetupTemplate(ctx, conn.Conn()); err != nil {
 			return fmt.Errorf("failed to setup template database: %w", err)
 		}
 	}
@@ -186,11 +194,22 @@ func (p *Pool) ensureDatabaseExists(ctx context.Context, dbName string) error {
 	return nil
 }
 
-// connectToDatabase creates a connection to a specific database.
-func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgx.Conn, error) {
-	// Get connection config from pool
-	config := p.config.DBPool.Config().ConnConfig.Copy()
-	config.Database = dbName
+// connectToDatabase creates a connection pool to a specific database.
+func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.Pool, error) {
+	// Get connection config from main pool
+	baseConfig := p.config.DBPool.Config()
+	
+	// Create new config for the test database
+	config, err := pgxpool.ParseConfig(baseConfig.ConnString())
+	if err != nil {
+		return nil, err
+	}
+	config.ConnConfig.Database = dbName
+	
+	// Create a smaller pool for the test database
+	// Most tests don't need many connections
+	config.MaxConns = 5
+	config.MinConns = 1
 
-	return pgx.ConnectConfig(ctx, config)
+	return pgxpool.NewWithConfig(ctx, config)
 }
