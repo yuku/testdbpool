@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yuku/numpool"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -69,7 +70,7 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				PoolID:        "test-pool",
 				DBPool:        &pgxpool.Pool{},
-				MaxDatabases:  65,
+				MaxDatabases:  numpool.MaxResourcesLimit + 1,
 				SetupTemplate: mockSetup,
 				ResetDatabase: mockReset,
 			},
@@ -139,8 +140,8 @@ func TestConfig_ValidateDefaultMaxDatabases(t *testing.T) {
 
 	// Check that MaxDatabases was set to the expected default
 	expectedMax := runtime.GOMAXPROCS(0)
-	if expectedMax > 64 {
-		expectedMax = 64
+	if expectedMax > numpool.MaxResourcesLimit {
+		expectedMax = numpool.MaxResourcesLimit
 	}
 
 	if config.MaxDatabases != expectedMax {
@@ -168,8 +169,8 @@ func TestConfig_ValidateDefaultMaxDatabases(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should be capped at 64
-	if config2.MaxDatabases != 64 {
-		t.Errorf("expected MaxDatabases to be capped at 64, got %d", config2.MaxDatabases)
+	// Should be capped at numpool.MaxResourcesLimit
+	if config2.MaxDatabases != numpool.MaxResourcesLimit {
+		t.Errorf("expected MaxDatabases to be capped at %d, got %d", numpool.MaxResourcesLimit, config2.MaxDatabases)
 	}
 }

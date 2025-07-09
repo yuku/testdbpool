@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yuku/numpool"
 )
 
 // Config holds the configuration for creating a test database pool.
@@ -19,8 +20,8 @@ type Config struct {
 	DBPool *pgxpool.Pool
 
 	// MaxDatabases is the maximum number of test databases in the pool.
-	// Must be between 1 and 64 (limited by numpool's bitmap implementation).
-	// If not set (0), defaults to min(runtime.GOMAXPROCS(0), 64).
+	// Must be between 1 and numpool.MaxResourcesLimit (limited by numpool's bitmap implementation).
+	// If not set (0), defaults to min(runtime.GOMAXPROCS(0), numpool.MaxResourcesLimit).
 	MaxDatabases int
 
 	// SetupTemplate is called once to set up the template database.
@@ -45,15 +46,15 @@ func (c *Config) Validate() error {
 	// Apply default for MaxDatabases if not set
 	if c.MaxDatabases == 0 {
 		gomaxprocs := runtime.GOMAXPROCS(0)
-		if gomaxprocs > 64 {
-			c.MaxDatabases = 64
+		if gomaxprocs > numpool.MaxResourcesLimit {
+			c.MaxDatabases = numpool.MaxResourcesLimit
 		} else {
 			c.MaxDatabases = gomaxprocs
 		}
 	}
 
-	if c.MaxDatabases < 1 || c.MaxDatabases > 64 {
-		return fmt.Errorf("MaxDatabases must be between 1 and 64, got %d", c.MaxDatabases)
+	if c.MaxDatabases < 1 || c.MaxDatabases > numpool.MaxResourcesLimit {
+		return fmt.Errorf("MaxDatabases must be between 1 and %d, got %d", numpool.MaxResourcesLimit, c.MaxDatabases)
 	}
 
 	if c.SetupTemplate == nil {

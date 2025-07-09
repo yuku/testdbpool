@@ -140,7 +140,7 @@ func TestPostOperations(t *testing.T) {
 type Config struct {
     PoolID        string                                          // Required: Unique identifier for the pool
     DBPool        *pgxpool.Pool                                   // Required: PostgreSQL connection pool
-    MaxDatabases  int                                             // Optional: Max databases (default: min(GOMAXPROCS, 64))
+    MaxDatabases  int                                             // Optional: Max databases (default: min(GOMAXPROCS, numpool.MaxResourcesLimit))
     SetupTemplate func(ctx context.Context, conn *pgx.Conn) error // Required: Initialize template database
     ResetDatabase func(ctx context.Context, conn *pgx.Conn) error // Required: Reset database between uses
 }
