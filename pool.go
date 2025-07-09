@@ -22,6 +22,9 @@ type Pool struct {
 
 // New creates a new test database pool.
 func New(ctx context.Context, config *Config) (*Pool, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}

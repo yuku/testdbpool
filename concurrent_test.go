@@ -45,7 +45,7 @@ func TestPoolConcurrency(t *testing.T) {
 		var wg sync.WaitGroup
 		errors := make(chan error, numWorkers)
 
-		for i := 0; i < numWorkers; i++ {
+		for i := range numWorkers {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
@@ -82,7 +82,7 @@ func TestPoolConcurrency(t *testing.T) {
 	t.Run("BlockingWhenExhausted", func(t *testing.T) {
 		// Acquire all databases
 		var dbs []*testdbpool.TestDB
-		for i := 0; i < config.MaxDatabases; i++ {
+		for i := range config.MaxDatabases {
 			db, err := testPool.Acquire(ctx)
 			if err != nil {
 				t.Fatalf("failed to acquire database %d: %v", i, err)

@@ -78,7 +78,7 @@ func TestPoolIntegration(t *testing.T) {
 	t.Run("MultipleAcquireRelease", func(t *testing.T) {
 		// Acquire all available databases
 		var dbs []*testdbpool.TestDB
-		for i := 0; i < config.MaxDatabases; i++ {
+		for i := range config.MaxDatabases {
 			db, err := testPool.Acquire(ctx)
 			if err != nil {
 				t.Fatalf("failed to acquire database %d: %v", i, err)
@@ -144,7 +144,7 @@ func TestPoolIntegration(t *testing.T) {
 		db.Release(ctx)
 
 		// Try to acquire the same database again
-		for i := 0; i < config.MaxDatabases; i++ {
+		for range config.MaxDatabases {
 			db2, err := testPool.Acquire(ctx)
 			if err != nil {
 				t.Fatalf("failed to re-acquire: %v", err)
