@@ -92,7 +92,7 @@ func TestMultiplePoolConnections(t *testing.T) {
 		for test := range 3 {
 			db, err := pool.Acquire(ctx)
 			if err != nil {
-				errors = append(errors, fmt.Errorf("package %d test %d: failed to acquire: %w", 
+				errors = append(errors, fmt.Errorf("package %d test %d: failed to acquire: %w",
 					pkg, test, err))
 				break
 			}
@@ -102,23 +102,23 @@ func TestMultiplePoolConnections(t *testing.T) {
 			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
 			if err != nil {
 				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: query failed: %w", 
+				errors = append(errors, fmt.Errorf("package %d test %d: query failed: %w",
 					pkg, test, err))
 				continue
 			}
 			if count != 3 {
 				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: expected 3 enum values, got %d", 
+				errors = append(errors, fmt.Errorf("package %d test %d: expected 3 enum values, got %d",
 					pkg, test, count))
 				continue
 			}
 
 			// Insert test data
-			_, err = db.Conn().Exec(ctx, 
+			_, err = db.Conn().Exec(ctx,
 				"INSERT INTO entities (enum_value) VALUES ($1)", "value1")
 			if err != nil {
 				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: insert failed: %w", 
+				errors = append(errors, fmt.Errorf("package %d test %d: insert failed: %w",
 					pkg, test, err))
 				continue
 			}
@@ -127,20 +127,20 @@ func TestMultiplePoolConnections(t *testing.T) {
 			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
 			if err != nil {
 				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: count query failed: %w", 
+				errors = append(errors, fmt.Errorf("package %d test %d: count query failed: %w",
 					pkg, test, err))
 				continue
 			}
 			if count != 1 {
 				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: expected 1 entity, got %d", 
+				errors = append(errors, fmt.Errorf("package %d test %d: expected 1 entity, got %d",
 					pkg, test, count))
 				continue
 			}
 
-			t.Logf("Package %d, Test %d completed successfully with DB %s", 
+			t.Logf("Package %d, Test %d completed successfully with DB %s",
 				pkg, test, db.DatabaseName())
-			
+
 			_ = db.Close()
 		}
 
@@ -216,7 +216,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 			mu.Unlock()
 
 			// Insert worker data
-			_, err = db.Conn().Exec(ctx, 
+			_, err = db.Conn().Exec(ctx,
 				"INSERT INTO test_data (worker_id, data) VALUES ($1, $2)",
 				workerID, "data from worker")
 			if err != nil {
@@ -226,7 +226,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 
 			// Verify our data exists
 			var count int
-			err = db.Conn().QueryRow(ctx, 
+			err = db.Conn().QueryRow(ctx,
 				"SELECT COUNT(*) FROM test_data WHERE worker_id = $1", workerID).Scan(&count)
 			if err != nil {
 				errors <- err

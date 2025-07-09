@@ -166,4 +166,3 @@ func TestPoolIntegration(t *testing.T) {
 		}
 	})
 }
-

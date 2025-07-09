@@ -20,11 +20,11 @@ func TestErrorHandling(t *testing.T) {
 
 	t.Run("SetupTemplateError", func(t *testing.T) {
 		t.Skip("Template setup error handling is complex with numpool - skipping for now")
-		
+
 		// This test is challenging because once numpool is initialized,
 		// it expects to be able to create databases. Template setup errors
 		// can cause indefinite blocking in numpool's resource acquisition.
-		// A more realistic test would involve SQL syntax errors or 
+		// A more realistic test would involve SQL syntax errors or
 		// permission issues rather than returning an error from the function.
 	})
 

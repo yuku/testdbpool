@@ -56,4 +56,3 @@ func (td *TestDB) Release(ctx context.Context) error {
 func (td *TestDB) Close() error {
 	return td.Release(context.Background())
 }
-
