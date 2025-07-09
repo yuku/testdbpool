@@ -24,3 +24,15 @@ func New(ctx context.Context, config *Config) (*Pool, error) {
 	// TODO: Implement pool creation
 	return nil, fmt.Errorf("not implemented")
 }
+
+// Acquire obtains a test database from the pool.
+func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
+	// TODO: Implement acquire logic
+	return nil, fmt.Errorf("not implemented")
+}
+
+// Close closes the pool and cleans up resources.
+func (p *Pool) Close() error {
+	// TODO: Implement close logic
+	return nil
+}
