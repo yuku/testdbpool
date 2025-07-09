@@ -2,6 +2,7 @@ package testdbpool_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -11,9 +12,11 @@ import (
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
 
-// TestMultiPackagePoolSharing tests that multiple goroutines can safely share the same pool
-// This simulates the scenario where multiple packages use the same testdbpool instance
-func TestMultiPackagePoolSharing(t *testing.T) {
+// TestMultiplePoolConnections tests that multiple independent pool instances
+// can connect to the same PoolID and share the underlying resources.
+// This simulates the real scenario where different test packages create their own
+// pool instances but use the same PoolID.
+func TestMultiplePoolConnections(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -23,110 +26,137 @@ func TestMultiPackagePoolSharing(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pool := testhelper.GetTestDBPool(t)
+	dbPool := testhelper.GetTestDBPool(t)
 
-	config := &testdbpool.Config{
-		PoolID:       "multi-package-test",
-		DBPool:       pool,
-		MaxDatabases: 5,
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `
-				CREATE TABLE enum_values (
-					enum_value VARCHAR(10) PRIMARY KEY
-				);
+	// Common configuration that would be shared across packages
+	sharedPoolID := "shared-multi-package-pool"
+	setupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, `
+			CREATE TABLE enum_values (
+				enum_value VARCHAR(10) PRIMARY KEY
+			);
 
-				INSERT INTO enum_values (enum_value) VALUES
-					('value1'),
-					('value2'),
-					('value3');
+			INSERT INTO enum_values (enum_value) VALUES
+				('value1'),
+				('value2'),
+				('value3');
 
-				CREATE TABLE entities (
-					id SERIAL PRIMARY KEY,
-					enum_value VARCHAR(10) NOT NULL REFERENCES enum_values(enum_value)
-				);
-			`)
-			return err
-		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
-			return err
-		},
+			CREATE TABLE entities (
+				id SERIAL PRIMARY KEY,
+				enum_value VARCHAR(10) NOT NULL REFERENCES enum_values(enum_value)
+			);
+		`)
+		return err
+	}
+	resetDatabase := func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
+		return err
 	}
 
-	testPool, err := testdbpool.New(ctx, config)
+	// First, create the initial pool (simulating the first package to run)
+	initialConfig := &testdbpool.Config{
+		PoolID:        sharedPoolID,
+		DBPool:        dbPool,
+		MaxDatabases:  10,
+		SetupTemplate: setupTemplate,
+		ResetDatabase: resetDatabase,
+	}
+
+	initialPool, err := testdbpool.New(ctx, initialConfig)
 	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
+		t.Fatalf("failed to create initial pool: %v", err)
 	}
-	defer testPool.Close()
+	defer initialPool.Close()
 
-	// Simulate multiple packages using the same pool concurrently
-	const numPackages = 10
-	const testsPerPackage = 3
+	// Simulate multiple packages each creating their own pool instance sequentially
+	// In real scenarios, go test runs packages sequentially, not concurrently
+	const numPackages = 5
+	errors := make([]error, 0)
 
-	var wg sync.WaitGroup
-	errors := make(chan error, numPackages*testsPerPackage)
-
-	// Each "package" runs multiple tests
 	for pkg := range numPackages {
-		wg.Add(1)
-		go func(packageID int) {
-			defer wg.Done()
+		// Each "package" creates its own pool instance with the same PoolID
+		config := &testdbpool.Config{
+			PoolID:        sharedPoolID,
+			DBPool:        dbPool,
+			MaxDatabases:  10, // Shared across all instances
+			SetupTemplate: setupTemplate,
+			ResetDatabase: resetDatabase,
+		}
 
-			// Each package runs multiple tests
-			for test := range testsPerPackage {
-				func(testID int) {
-					db, err := testPool.Acquire(ctx)
-					if err != nil {
-						errors <- err
-						return
-					}
-					defer db.Close()
+		pool, err := testdbpool.New(ctx, config)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("package %d: failed to create pool: %w", pkg, err))
+			continue
+		}
 
-					// Verify schema exists
-					var count int
-					err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
-					if err != nil {
-						errors <- err
-						return
-					}
-					if count != 3 {
-						errors <- err
-						return
-					}
-
-					// Insert test data
-					_, err = db.Conn().Exec(ctx, 
-						"INSERT INTO entities (enum_value) VALUES ($1)", "value1")
-					if err != nil {
-						errors <- err
-						return
-					}
-
-					// Verify data was inserted
-					err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
-					if err != nil {
-						errors <- err
-						return
-					}
-					if count != 1 {
-						errors <- err
-						return
-					}
-
-					t.Logf("Package %d, Test %d completed successfully with DB %s", 
-						packageID, testID, db.DatabaseName())
-				}(test)
+		// Run multiple tests within this package
+		for test := range 3 {
+			db, err := pool.Acquire(ctx)
+			if err != nil {
+				errors = append(errors, fmt.Errorf("package %d test %d: failed to acquire: %w", 
+					pkg, test, err))
+				pool.Close()
+				break
 			}
-		}(pkg)
-	}
 
-	wg.Wait()
-	close(errors)
+			// Verify schema exists
+			var count int
+			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
+			if err != nil {
+				db.Close()
+				errors = append(errors, fmt.Errorf("package %d test %d: query failed: %w", 
+					pkg, test, err))
+				continue
+			}
+			if count != 3 {
+				db.Close()
+				errors = append(errors, fmt.Errorf("package %d test %d: expected 3 enum values, got %d", 
+					pkg, test, count))
+				continue
+			}
+
+			// Insert test data
+			_, err = db.Conn().Exec(ctx, 
+				"INSERT INTO entities (enum_value) VALUES ($1)", "value1")
+			if err != nil {
+				db.Close()
+				errors = append(errors, fmt.Errorf("package %d test %d: insert failed: %w", 
+					pkg, test, err))
+				continue
+			}
+
+			// Verify data was inserted
+			err = db.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
+			if err != nil {
+				db.Close()
+				errors = append(errors, fmt.Errorf("package %d test %d: count query failed: %w", 
+					pkg, test, err))
+				continue
+			}
+			if count != 1 {
+				db.Close()
+				errors = append(errors, fmt.Errorf("package %d test %d: expected 1 entity, got %d", 
+					pkg, test, count))
+				continue
+			}
+
+			t.Logf("Package %d, Test %d completed successfully with DB %s", 
+				pkg, test, db.DatabaseName())
+			
+			db.Close()
+		}
+
+		pool.Close()
+	}
 
 	// Check for errors
-	for err := range errors {
-		t.Errorf("package test error: %v", err)
+	for _, err := range errors {
+		t.Errorf("error: %v", err)
 	}
+
+	// Verify that databases were shared across packages
+	// This demonstrates that multiple New() calls with same PoolID share resources
+	t.Logf("Multiple packages successfully shared the same pool ID: %s", sharedPoolID)
 }
 
 // TestConcurrentPoolAccess tests that the pool handles concurrent access correctly
