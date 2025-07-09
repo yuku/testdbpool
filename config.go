@@ -3,6 +3,7 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,7 @@ type Config struct {
 
 	// MaxDatabases is the maximum number of test databases in the pool.
 	// Must be between 1 and 64 (limited by numpool's bitmap implementation).
+	// If not set (0), defaults to min(runtime.GOMAXPROCS(0), 64).
 	MaxDatabases int
 
 	// SetupTemplate is called once to set up the template database.
@@ -38,6 +40,16 @@ func (c *Config) Validate() error {
 
 	if c.DBPool == nil {
 		return fmt.Errorf("DBPool is required")
+	}
+
+	// Apply default for MaxDatabases if not set
+	if c.MaxDatabases == 0 {
+		gomaxprocs := runtime.GOMAXPROCS(0)
+		if gomaxprocs > 64 {
+			c.MaxDatabases = 64
+		} else {
+			c.MaxDatabases = gomaxprocs
+		}
 	}
 
 	if c.MaxDatabases < 1 || c.MaxDatabases > 64 {

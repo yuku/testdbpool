@@ -96,7 +96,7 @@ func TestWithDatabase(t *testing.T) {
 
 - `PoolID`: Unique identifier for the test database pool
 - `DBPool`: PostgreSQL connection pool (`*pgxpool.Pool`)
-- `MaxDatabases`: Maximum number of test databases (1-64)
+- `MaxDatabases`: Maximum number of test databases (1-64). If not set (0), defaults to `min(runtime.GOMAXPROCS(0), 64)`
 - `SetupTemplate`: Function to initialize the template database schema
 - `ResetDatabase`: Function to reset a database to clean state
 
