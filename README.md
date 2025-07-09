@@ -85,9 +85,14 @@ func TestWithDatabase(t *testing.T) {
     }
     defer db.Close() // Database is reset and returned to pool
     
-    // Use the database connection
-    conn := db.Conn()
-    _, err = conn.Exec(ctx, "INSERT INTO users (name) VALUES ($1)", "Alice")
+    // Use the database connection pool
+    conn, err := db.Pool().Acquire(ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer conn.Release()
+    
+    _, err = conn.Conn().Exec(ctx, "INSERT INTO users (name) VALUES ($1)", "Alice")
     if err != nil {
         t.Fatal(err)
     }
@@ -134,6 +139,15 @@ func TestPostOperations(t *testing.T) {
 
 ## API Reference
 
+### TestDB Connection Pool
+
+Each `TestDB` instance provides its own connection pool (`*pgxpool.Pool`) to the test database. This offers several advantages:
+
+- **Multiple concurrent connections**: Tests can execute parallel queries
+- **Connection reuse**: Efficient connection management within each test
+- **Familiar pgx API**: Use all standard pgxpool features
+- **Automatic cleanup**: All connections are closed when the test database is released
+
 ### Configuration
 
 ```go
@@ -158,8 +172,12 @@ db, err := pool.Acquire(ctx)
 // Get the database name (for debugging/logging)
 name := db.DatabaseName()
 
-// Get the database connection
-conn := db.Conn()
+// Get the database connection pool
+pool := db.Pool()
+
+// Acquire a connection from the pool
+conn, err := pool.Acquire(ctx)
+defer conn.Release()
 
 // Return the database to the pool (resets it first)
 err := db.Close()

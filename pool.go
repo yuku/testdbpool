@@ -3,6 +3,7 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -196,18 +197,22 @@ func (p *Pool) ensureDatabaseExists(ctx context.Context, dbName string) error {
 
 // connectToDatabase creates a connection pool to a specific database.
 func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.Pool, error) {
-	// Get connection config from main pool
-	baseConfig := p.config.DBPool.Config()
-	
-	// Create new config for the test database
-	config, err := pgxpool.ParseConfig(baseConfig.ConnString())
-	if err != nil {
-		return nil, err
+	// Get the original connection string from environment or use default
+	baseConnString := os.Getenv("DATABASE_URL")
+	if baseConnString == "" {
+		baseConnString = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 	}
+	
+	// Parse the base connection string
+	config, err := pgxpool.ParseConfig(baseConnString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse base config: %w", err)
+	}
+	
+	// Update to use the test database
 	config.ConnConfig.Database = dbName
 	
-	// Create a smaller pool for the test database
-	// Most tests don't need many connections
+	// Set pool size - most tests don't need many connections
 	config.MaxConns = 5
 	config.MinConns = 1
 
