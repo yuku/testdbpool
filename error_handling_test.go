@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/yuku/testdbpool"
@@ -61,12 +62,12 @@ func TestErrorHandling(t *testing.T) {
 		}
 	})
 
-	t.Run("DatabaseConnectionError", func(t *testing.T) {
-		// Create a config with valid setup but test connection failure scenarios
+	t.Run("DatabasePoolConnection", func(t *testing.T) {
+		// Test that the pool connection works correctly
 		config := &testdbpool.Config{
-			PoolID:       "connection-error-test",
+			PoolID:       "pool-connection-test",
 			DBPool:       pool,
-			MaxDatabases: 1,
+			MaxDatabases: 2, // Increase to avoid contention
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, "CREATE TABLE test_table (id INT)")
 				return err
@@ -82,31 +83,32 @@ func TestErrorHandling(t *testing.T) {
 			t.Fatalf("failed to create pool: %v", err)
 		}
 
-		// This test mainly verifies that the pool handles connection errors gracefully
-		// In a real scenario, this might happen if the database is temporarily unavailable
-		db, err := testPool.Acquire(ctx)
+		// Use a timeout context to prevent indefinite hanging
+		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		db, err := testPool.Acquire(acquireCtx)
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
+		defer func() { _ = db.Close() }()
 
-		// Verify connection works
+		// Verify pool connection works
 		conn, err := db.Pool().Acquire(ctx)
 		if err != nil {
-			t.Fatalf("failed to acquire connection: %v", err)
+			t.Fatalf("failed to acquire connection from pool: %v", err)
 		}
 		defer conn.Release()
 		
 		var result int
 		err = conn.Conn().QueryRow(ctx, "SELECT 1").Scan(&result)
 		if err != nil {
-			t.Fatalf("database connection failed: %v", err)
+			t.Fatalf("database query failed: %v", err)
 		}
 
 		if result != 1 {
 			t.Errorf("expected 1, got %d", result)
 		}
-
-		_ = db.Close()
 	})
 
 	t.Run("ContextCancellation", func(t *testing.T) {

@@ -3,7 +3,6 @@ package testdbpool
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -197,20 +196,50 @@ func (p *Pool) ensureDatabaseExists(ctx context.Context, dbName string) error {
 
 // connectToDatabase creates a connection pool to a specific database.
 func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.Pool, error) {
-	// Get the original connection string from environment or use default
-	baseConnString := os.Getenv("DATABASE_URL")
-	if baseConnString == "" {
-		baseConnString = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+	// Get connection config from the main pool
+	baseConfig := p.config.DBPool.Config()
+	
+	// Create a new config based on the main pool's config
+	// We need to build a connection string that ParseConfig can use
+	connConfig := baseConfig.ConnConfig
+	
+	// Build connection string
+	var connString string
+	if connConfig.Host == "" {
+		// Unix socket connection
+		connString = fmt.Sprintf("host=%s port=%d user=%s dbname=%s",
+			"/var/run/postgresql",
+			connConfig.Port,
+			connConfig.User,
+			dbName,
+		)
+	} else {
+		// TCP connection
+		connString = fmt.Sprintf("host=%s port=%d user=%s dbname=%s",
+			connConfig.Host,
+			connConfig.Port,
+			connConfig.User,
+			dbName,
+		)
 	}
 	
-	// Parse the base connection string
-	config, err := pgxpool.ParseConfig(baseConnString)
+	// Add password if set
+	if connConfig.Password != "" {
+		connString += fmt.Sprintf(" password=%s", connConfig.Password)
+	}
+	
+	// Add SSL mode
+	if connConfig.TLSConfig != nil {
+		connString += " sslmode=require"
+	} else {
+		connString += " sslmode=disable"
+	}
+	
+	// Parse config
+	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse base config: %w", err)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	
-	// Update to use the test database
-	config.ConnConfig.Database = dbName
 	
 	// Set pool size - most tests don't need many connections
 	config.MaxConns = 5
