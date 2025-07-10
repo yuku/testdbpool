@@ -1,0 +1,15 @@
+echo "Running pre-commit checks..."
+
+echo "$ go fmt"
+if ! go fmt | grep -q .; then
+    echo "✓ go fmt: no formatting changes needed"
+else
+    echo "✗ go fmt: formatting changes detected. Please run 'go fmt ./...' before committing"
+    exit 1
+fi
+
+echo "$ golangci-lint run"
+golangci-lint run
+
+echo "$ go test -timeout 10s -race ./..."
+go test -timeout 10s -race ./...
