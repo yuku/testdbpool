@@ -3,6 +3,7 @@ package testdbpool_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/yuku/testdbpool"
@@ -15,33 +16,38 @@ func TestPoolIntegration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	pool := testhelper.GetTestDBPool(t)
-
-	config := &testdbpool.Config{
-		PoolID:       "test-pool-integration",
-		DBPool:       pool,
-		MaxDatabases: 3,
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			// Create a test table in template
-			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
-			return err
-		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			// Truncate all tables to reset
-			_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
-			return err
-		},
-	}
-
-	// Create pool
-	testPool, err := testdbpool.New(ctx, config)
-	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
-	}
 
 	// Test acquiring a database
 	t.Run("Acquire", func(t *testing.T) {
-		db, err := testPool.Acquire(ctx)
+		pool := testhelper.GetTestDBPool(t)
+
+		config := &testdbpool.Config{
+			PoolID:       "test-acquire-integration",
+			DBPool:       pool,
+			MaxDatabases: 3,
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				// Create a test table in template
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+				return err
+			},
+			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+				// Truncate all tables to reset
+				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+				return err
+			},
+		}
+
+		// Create pool
+		testPool, err := testdbpool.New(ctx, config)
+		if err != nil {
+			t.Fatalf("failed to create pool: %v", err)
+		}
+		
+		// Use timeout to prevent hanging
+		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		
+		db, err := testPool.Acquire(acquireCtx)
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
@@ -66,7 +72,7 @@ func TestPoolIntegration(t *testing.T) {
 			)
 		`).Scan(&exists)
 		if err != nil {
-			t.Fatalf("failed to check table: %v", err)
+			t.Fatalf("failed to check table existence: %v", err)
 		}
 		if !exists {
 			t.Error("test_table should exist")
@@ -75,10 +81,35 @@ func TestPoolIntegration(t *testing.T) {
 
 	// Test multiple acquire/release cycles
 	t.Run("MultipleAcquireRelease", func(t *testing.T) {
+		pool := testhelper.GetTestDBPool(t)
+
+		config := &testdbpool.Config{
+			PoolID:       "test-multiple-integration",
+			DBPool:       pool,
+			MaxDatabases: 3,
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+				return err
+			},
+			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+				return err
+			},
+		}
+
+		testPool, err := testdbpool.New(ctx, config)
+		if err != nil {
+			t.Fatalf("failed to create pool: %v", err)
+		}
+
+		// Use timeout
+		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
 		// Acquire all available databases
 		var dbs []*testdbpool.TestDB
 		for i := range config.MaxDatabases {
-			db, err := testPool.Acquire(ctx)
+			db, err := testPool.Acquire(acquireCtx)
 			if err != nil {
 				t.Fatalf("failed to acquire database %d: %v", i, err)
 			}
@@ -102,7 +133,7 @@ func TestPoolIntegration(t *testing.T) {
 		}
 
 		// Acquire again to verify reuse
-		db, err := testPool.Acquire(ctx)
+		db, err := testPool.Acquire(acquireCtx)
 		if err != nil {
 			t.Fatalf("failed to re-acquire database: %v", err)
 		}
@@ -116,11 +147,35 @@ func TestPoolIntegration(t *testing.T) {
 
 	// Test reset functionality
 	t.Run("ResetDatabase", func(t *testing.T) {
-		db, err := testPool.Acquire(ctx)
+		pool := testhelper.GetTestDBPool(t)
+
+		config := &testdbpool.Config{
+			PoolID:       "test-reset-integration",
+			DBPool:       pool,
+			MaxDatabases: 2,
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+				return err
+			},
+			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+				return err
+			},
+		}
+
+		testPool, err := testdbpool.New(ctx, config)
+		if err != nil {
+			t.Fatalf("failed to create pool: %v", err)
+		}
+
+		// Use timeout
+		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		db, err := testPool.Acquire(acquireCtx)
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
 		}
-		defer func() { _ = db.Close() }()
 
 		// Insert data
 		_, err = db.Pool().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
@@ -143,8 +198,8 @@ func TestPoolIntegration(t *testing.T) {
 		_ = db.Release(ctx)
 
 		// Try to acquire the same database again
-		for range config.MaxDatabases {
-			db2, err := testPool.Acquire(ctx)
+		for range 2 {
+			db2, err := testPool.Acquire(acquireCtx)
 			if err != nil {
 				t.Fatalf("failed to re-acquire: %v", err)
 			}
