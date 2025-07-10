@@ -98,17 +98,8 @@ func TestMultiplePoolConnections(t *testing.T) {
 			}
 
 			// Verify schema exists
-			conn, err := db.Pool().Acquire(ctx)
-			if err != nil {
-				_ = db.Close()
-				errors = append(errors, fmt.Errorf("package %d test %d: failed to acquire connection: %w",
-					pkg, test, err))
-				continue
-			}
-			defer conn.Release()
-			
 			var count int
-			err = conn.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
+			err = db.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM enum_values").Scan(&count)
 			if err != nil {
 				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: query failed: %w",
@@ -123,7 +114,7 @@ func TestMultiplePoolConnections(t *testing.T) {
 			}
 
 			// Insert test data
-			_, err = conn.Conn().Exec(ctx,
+			_, err = db.Pool().Exec(ctx,
 				"INSERT INTO entities (enum_value) VALUES ($1)", "value1")
 			if err != nil {
 				_ = db.Close()
@@ -133,7 +124,7 @@ func TestMultiplePoolConnections(t *testing.T) {
 			}
 
 			// Verify data was inserted
-			err = conn.Conn().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
+			err = db.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM entities").Scan(&count)
 			if err != nil {
 				_ = db.Close()
 				errors = append(errors, fmt.Errorf("package %d test %d: count query failed: %w",
@@ -225,14 +216,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 			mu.Unlock()
 
 			// Insert worker data
-			conn, err := db.Pool().Acquire(ctx)
-			if err != nil {
-				errors <- err
-				return
-			}
-			defer conn.Release()
-			
-			_, err = conn.Conn().Exec(ctx,
+			_, err = db.Pool().Exec(ctx,
 				"INSERT INTO test_data (worker_id, data) VALUES ($1, $2)",
 				workerID, "data from worker")
 			if err != nil {
@@ -242,7 +226,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 
 			// Verify our data exists
 			var count int
-			err = conn.Conn().QueryRow(ctx,
+			err = db.Pool().QueryRow(ctx,
 				"SELECT COUNT(*) FROM test_data WHERE worker_id = $1", workerID).Scan(&count)
 			if err != nil {
 				errors <- err

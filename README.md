@@ -86,13 +86,7 @@ func TestWithDatabase(t *testing.T) {
     defer db.Close() // Database is reset and returned to pool
     
     // Use the database connection pool
-    conn, err := db.Pool().Acquire(ctx)
-    if err != nil {
-        t.Fatal(err)
-    }
-    defer conn.Release()
-    
-    _, err = conn.Conn().Exec(ctx, "INSERT INTO users (name) VALUES ($1)", "Alice")
+    _, err = db.Pool().Exec(ctx, "INSERT INTO users (name) VALUES ($1)", "Alice")
     if err != nil {
         t.Fatal(err)
     }
