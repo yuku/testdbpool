@@ -198,11 +198,11 @@ func (p *Pool) ensureDatabaseExists(ctx context.Context, dbName string) error {
 func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.Pool, error) {
 	// Get connection config from the main pool
 	baseConfig := p.config.DBPool.Config()
-	
+
 	// Create a new config based on the main pool's config
 	// We need to build a connection string that ParseConfig can use
 	connConfig := baseConfig.ConnConfig
-	
+
 	// Build connection string
 	var connString string
 	if connConfig.Host == "" {
@@ -222,25 +222,25 @@ func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.P
 			dbName,
 		)
 	}
-	
+
 	// Add password if set
 	if connConfig.Password != "" {
 		connString += fmt.Sprintf(" password=%s", connConfig.Password)
 	}
-	
+
 	// Add SSL mode
 	if connConfig.TLSConfig != nil {
 		connString += " sslmode=require"
 	} else {
 		connString += " sslmode=disable"
 	}
-	
+
 	// Parse config
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	
+
 	// Set pool size - most tests don't need many connections
 	config.MaxConns = 5
 	config.MinConns = 1

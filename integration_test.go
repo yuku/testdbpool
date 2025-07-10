@@ -42,11 +42,11 @@ func TestPoolIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create pool: %v", err)
 		}
-		
+
 		// Use timeout to prevent hanging
 		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		
+
 		db, err := testPool.Acquire(acquireCtx)
 		if err != nil {
 			t.Fatalf("failed to acquire database: %v", err)
