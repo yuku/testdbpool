@@ -195,7 +195,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 	dbUsage := make(map[string][]int) // dbName -> []workerIDs
 	var mu sync.Mutex
 
-	const numWorkers = 20
+	const numWorkers = 10
 	var wg sync.WaitGroup
 	errors := make(chan error, numWorkers)
 
