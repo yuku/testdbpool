@@ -23,3 +23,11 @@ func (p *Pool) DatabaseNames() map[int]string {
 	defer p.mu.RUnlock()
 	return p.databaseNames
 }
+
+func (p *Pool) GetDatabaseName(index int) string {
+	return p.getDatabaseName(index)
+}
+
+func (p *Pool) GetTemplateDBName() string {
+	return p.templateDB
+}

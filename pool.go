@@ -252,3 +252,33 @@ func (p *Pool) connectToDatabase(ctx context.Context, dbName string) (*pgxpool.P
 
 	return pgxpool.NewWithConfig(ctx, config)
 }
+
+// DropAllDatabases drops all databases in the pool.
+// It drops all databases not only created by this pool, but also any that can
+// be found in the PostgreSQL instance.
+// This is a destructive operation and should be used with caution.
+func (p *Pool) DropAllDatabases(ctx context.Context) error {
+	// Drop all numbered databases for this pool
+	for i := 0; i < p.config.MaxDatabases; i++ {
+		dbName := p.getDatabaseName(i)
+
+		// Drop the database if it exists
+		_, err := p.config.DBPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", pgx.Identifier{dbName}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to drop database %s: %w", dbName, err)
+		}
+	}
+
+	// Also drop the template database
+	_, err := p.config.DBPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", pgx.Identifier{p.templateDB}.Sanitize()))
+	if err != nil {
+		return fmt.Errorf("failed to drop template database %s: %w", p.templateDB, err)
+	}
+
+	// Clear the database names map since all databases are dropped
+	p.mu.Lock()
+	p.databaseNames = make(map[int]string)
+	p.mu.Unlock()
+
+	return nil
+}
