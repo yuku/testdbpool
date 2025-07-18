@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/numpool"
@@ -13,8 +12,8 @@ import (
 
 func TestConfig_Validate(t *testing.T) {
 	// Mock setup and reset functions
-	mockSetup := func(ctx context.Context, conn *pgx.Conn) error { return nil }
-	mockReset := func(ctx context.Context, conn *pgx.Conn) error { return nil }
+	mockSetup := func(ctx context.Context, pool *pgxpool.Pool) error { return nil }
+	mockReset := func(ctx context.Context, pool *pgxpool.Pool) error { return nil }
 
 	tests := []struct {
 		name    string
@@ -122,8 +121,8 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestConfig_ValidateDefaultMaxDatabases(t *testing.T) {
 	// Mock setup and reset functions
-	mockSetup := func(ctx context.Context, conn *pgx.Conn) error { return nil }
-	mockReset := func(ctx context.Context, conn *pgx.Conn) error { return nil }
+	mockSetup := func(ctx context.Context, pool *pgxpool.Pool) error { return nil }
+	mockReset := func(ctx context.Context, pool *pgxpool.Pool) error { return nil }
 
 	// Test that MaxDatabases defaults to min(GOMAXPROCS, 64)
 	config := Config{

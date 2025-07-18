@@ -28,32 +28,24 @@ func (td *TestDB) DatabaseName() string {
 // Release releases the test database back to the pool after resetting it.
 // This method should be called when the test is complete, typically using defer.
 func (td *TestDB) Release(ctx context.Context) error {
-	// Reset and close the pool
-	if td.dbPool != nil {
-		// Get a connection from the pool for reset
-		conn, err := td.dbPool.Acquire(ctx)
-		if err == nil {
-			// Reset database before releasing
-			if err := td.pool.config.ResetDatabase(ctx, conn.Conn()); err != nil {
-				// Log error but continue with release
-				// In production, you might want to handle this differently
-				_ = err // explicitly ignore error
-			}
-			conn.Release()
-		}
-		td.dbPool.Close()
-		td.dbPool = nil
+	if td.pool == nil || td.resource == nil {
+		return nil // Nothing to release
 	}
+
+	// Reset database before releasing
+	var resetErr error
+	if err := td.pool.config.ResetDatabase(ctx, td.dbPool); err != nil {
+		resetErr = err
+	}
+	td.dbPool = nil
 
 	// Release the resource back to numpool
-	if td.resource != nil {
-		if err := td.resource.Release(ctx); err != nil {
-			return err
-		}
-		td.resource = nil
+	if err := td.resource.Release(ctx); err != nil {
+		return err
 	}
+	td.resource = nil
 
-	return nil
+	return resetErr
 }
 
 // Close is an alias for Release that doesn't require a context.

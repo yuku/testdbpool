@@ -135,15 +135,8 @@ func (p *Pool) setupTemplateDatabase(ctx context.Context) error {
 		}
 		defer templatePool.Close()
 
-		// Get a connection for setup
-		conn, err := templatePool.Acquire(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to acquire connection for setup: %w", err)
-		}
-		defer conn.Release()
-
 		// Run setup function
-		if err := p.config.SetupTemplate(ctx, conn.Conn()); err != nil {
+		if err := p.config.SetupTemplate(ctx, templatePool); err != nil {
 			return fmt.Errorf("failed to setup template database: %w", err)
 		}
 	}

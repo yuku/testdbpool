@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
@@ -26,14 +26,14 @@ func TestPoolIntegration(t *testing.T) {
 			PoolID:       "test-acquire-integration",
 			DBPool:       pool,
 			MaxDatabases: 3,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
 				// Create a test table in template
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+				_, err := pool.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
 				// Truncate all tables to reset
-				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+				_, err := pool.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
 				return err
 			},
 		}
@@ -50,7 +50,7 @@ func TestPoolIntegration(t *testing.T) {
 		require.NoError(t, err, "failed to acquire database")
 		defer func() { _ = db.Close() }()
 
-		// Verify we can use the connection
+		// Verify we can use the poolection
 		var result int
 		err = db.Pool().QueryRow(ctx, "SELECT 1").Scan(&result)
 		require.NoError(t, err, "failed to query")
@@ -80,12 +80,12 @@ func TestPoolIntegration(t *testing.T) {
 			PoolID:       "test-multiple-integration",
 			DBPool:       pool,
 			MaxDatabases: 3,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
 				return err
 			},
 		}
@@ -139,12 +139,12 @@ func TestPoolIntegration(t *testing.T) {
 			PoolID:       "test-reset-integration",
 			DBPool:       pool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `TRUNCATE test_table RESTART IDENTITY`)
 				return err
 			},
 		}

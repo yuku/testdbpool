@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
@@ -23,9 +23,9 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			PoolID:       "complex-schema-test",
 			DBPool:       pool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
 				// Create a complex schema with various PostgreSQL features
-				_, err := conn.Exec(ctx, `
+				_, err := pool.Exec(ctx, `
 					-- Custom enum type
 					CREATE TYPE status_type AS ENUM ('active', 'inactive', 'pending');
 
@@ -85,8 +85,8 @@ func TestPostgreSQLFeatures(t *testing.T) {
 				`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `
 					TRUNCATE posts, users RESTART IDENTITY CASCADE;
 				`)
 				return err
@@ -183,8 +183,8 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			PoolID:       "isolation-test",
 			DBPool:       pool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `
 					CREATE TABLE accounts (
 						id SERIAL PRIMARY KEY,
 						name VARCHAR(100) NOT NULL,
@@ -197,8 +197,8 @@ func TestPostgreSQLFeatures(t *testing.T) {
 				`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+				_, err := pool.Exec(ctx, `
 					UPDATE accounts SET balance = 1000.00 WHERE name = 'Alice';
 					UPDATE accounts SET balance = 500.00 WHERE name = 'Bob';
 				`)

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
@@ -24,12 +24,12 @@ func TestPoolConcurrency(t *testing.T) {
 		PoolID:       "test-pool-concurrent",
 		DBPool:       pool,
 		MaxDatabases: 3,
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `CREATE TABLE concurrent_test (id SERIAL PRIMARY KEY, worker_id INT)`)
+		SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
+			_, err := pool.Exec(ctx, `CREATE TABLE concurrent_test (id SERIAL PRIMARY KEY, worker_id INT)`)
 			return err
 		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `TRUNCATE concurrent_test RESTART IDENTITY`)
+		ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+			_, err := pool.Exec(ctx, `TRUNCATE concurrent_test RESTART IDENTITY`)
 			return err
 		},
 	}

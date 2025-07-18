@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
@@ -31,8 +31,8 @@ func TestMultiplePoolConnections(t *testing.T) {
 
 	// Common configuration that would be shared across packages
 	sharedPoolID := "shared-multi-package-pool"
-	setupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, `
+	setupTemplate := func(ctx context.Context, pool *pgxpool.Pool) error {
+		_, err := pool.Exec(ctx, `
 			CREATE TABLE enum_values (
 				enum_value VARCHAR(10) PRIMARY KEY
 			);
@@ -49,8 +49,8 @@ func TestMultiplePoolConnections(t *testing.T) {
 		`)
 		return err
 	}
-	resetDatabase := func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
+	resetDatabase := func(ctx context.Context, pool *pgxpool.Pool) error {
+		_, err := pool.Exec(ctx, "TRUNCATE TABLE entities CASCADE;")
 		return err
 	}
 
@@ -170,8 +170,8 @@ func TestConcurrentPoolAccess(t *testing.T) {
 		PoolID:       "concurrent-access-test",
 		DBPool:       pool,
 		MaxDatabases: 3, // Limited to force contention
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `
+		SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
+			_, err := pool.Exec(ctx, `
 				CREATE TABLE test_data (
 					id SERIAL PRIMARY KEY,
 					worker_id INT NOT NULL,
@@ -180,8 +180,8 @@ func TestConcurrentPoolAccess(t *testing.T) {
 			`)
 			return err
 		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, "TRUNCATE TABLE test_data RESTART IDENTITY;")
+		ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
+			_, err := pool.Exec(ctx, "TRUNCATE TABLE test_data RESTART IDENTITY;")
 			return err
 		},
 	}

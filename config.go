@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
 )
@@ -26,11 +25,11 @@ type Config struct {
 
 	// SetupTemplate is called once to set up the template database.
 	// The template database is used as a source for creating test databases.
-	SetupTemplate func(ctx context.Context, conn *pgx.Conn) error
+	SetupTemplate func(context.Context, *pgxpool.Pool) error
 
 	// ResetDatabase is called before releasing a test database back to the pool.
 	// It should restore the database to a clean state for the next use.
-	ResetDatabase func(ctx context.Context, conn *pgx.Conn) error
+	ResetDatabase func(context.Context, *pgxpool.Pool) error
 }
 
 // Validate checks if the configuration is valid.

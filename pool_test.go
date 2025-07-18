@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
@@ -24,10 +25,10 @@ func TestNew(t *testing.T) {
 			PoolID:       "test-new-valid",
 			DBPool:       pool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
 				return nil
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
 				return nil
 			},
 		}
@@ -62,10 +63,10 @@ func TestNew(t *testing.T) {
 			PoolID:       poolID,
 			DBPool:       pool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+			SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
 				return nil
 			},
-			ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
 				return nil
 			},
 		}
@@ -84,10 +85,10 @@ func TestPool_DropAllDatabases(t *testing.T) {
 		PoolID:       "test-drop-all",
 		DBPool:       pool,
 		MaxDatabases: 5,
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+		SetupTemplate: func(ctx context.Context, pool *pgxpool.Pool) error {
 			return nil // no setup needed for this test
 		},
-		ResetDatabase: func(ctx context.Context, conn *pgx.Conn) error {
+		ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
 			return nil // no reset needed for this test
 		},
 	})
