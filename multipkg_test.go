@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
@@ -64,7 +65,7 @@ func TestMultiplePoolConnections(t *testing.T) {
 
 	_, err := testdbpool.New(ctx, initialConfig)
 	if err != nil {
-		t.Fatalf("failed to create initial pool: %v", err)
+		require.NoError(t, err, "failed to create initial pool")
 	}
 
 	// Simulate multiple packages each creating their own pool instance sequentially
@@ -187,7 +188,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 
 	testPool, err := testdbpool.New(ctx, config)
 	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
+		require.NoError(t, err, "failed to create pool")
 	}
 
 	// Track database usage

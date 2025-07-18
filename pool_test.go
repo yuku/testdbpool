@@ -1,10 +1,12 @@
-package testdbpool
+package testdbpool_test
 
 import (
 	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
 
@@ -17,7 +19,7 @@ func TestNew(t *testing.T) {
 	pool := testhelper.GetTestDBPool(t)
 
 	t.Run("ValidConfig", func(t *testing.T) {
-		config := &Config{
+		config := &testdbpool.Config{
 			PoolID:       "test-new-valid",
 			DBPool:       pool,
 			MaxDatabases: 2,
@@ -29,47 +31,33 @@ func TestNew(t *testing.T) {
 			},
 		}
 
-		testPool, err := New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		testPool, err := testdbpool.New(ctx, config)
+		require.NoError(t, err, "failed to create test database pool")
 
 		// Verify pool was created
-		if testPool.config != config {
-			t.Error("config mismatch")
-		}
-		if testPool.numpool == nil {
-			t.Error("numpool should be initialized")
-		}
-		if testPool.templateDB == "" {
-			t.Error("templateDB should be set")
-		}
-		if testPool.databaseNames == nil {
-			t.Error("databaseNames map should be initialized")
-		}
+		require.Same(t, testPool.Config(), config, "expected same config")
+		require.NotNil(t, testPool.Numpool(), "expected numpool to be initialized")
+		require.NotEmpty(t, testPool.TemplateDB(), "expected templateDB to be set")
+		require.NotNil(t, testPool.DatabaseNames(), "expected databaseNames map to be initialized")
 	})
 
-	t.Run("InvalidConfig", func(t *testing.T) {
-		// Test with nil config
-		_, err := New(ctx, nil)
-		if err == nil {
-			t.Error("expected error for nil config")
-		}
+	t.Run("returns error if nil is given", func(t *testing.T) {
+		_, err := testdbpool.New(ctx, nil)
+		require.Error(t, err, "expected error for nil config")
+	})
 
-		// Test with invalid config
-		invalidConfig := &Config{
+	t.Run("returns error if invalid config is given", func(t *testing.T) {
+		invalidConfig := &testdbpool.Config{
 			PoolID: "test-new-invalid",
 			// Missing required fields
 		}
-		_, err = New(ctx, invalidConfig)
-		if err == nil {
-			t.Error("expected error for invalid config")
-		}
+		_, err := testdbpool.New(ctx, invalidConfig)
+		require.Error(t, err, "expected error for invalid config")
 	})
 
 	t.Run("TemplateNaming", func(t *testing.T) {
 		poolID := "test-template-name"
-		config := &Config{
+		config := &testdbpool.Config{
 			PoolID:       poolID,
 			DBPool:       pool,
 			MaxDatabases: 1,
@@ -81,14 +69,8 @@ func TestNew(t *testing.T) {
 			},
 		}
 
-		testPool, err := New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
-
-		expectedTemplate := "testdb_template_" + poolID
-		if testPool.templateDB != expectedTemplate {
-			t.Errorf("expected template name %q, got %q", expectedTemplate, testPool.templateDB)
-		}
+		testPool, err := testdbpool.New(ctx, config)
+		require.NoError(t, err, "failed to create test database pool")
+		require.Equal(t, "testdb_template_"+poolID, testPool.TemplateDB())
 	})
 }

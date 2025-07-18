@@ -13,7 +13,8 @@ import (
 // Pool manages a pool of test databases.
 type Pool struct {
 	config        *Config
-	numpool       *numpool.Pool
+	manager       *numpool.Manager
+	numpool       *numpool.Numpool
 	templateDB    string
 	databaseNames map[int]string // maps resource index to database name
 	mu            sync.RWMutex   // protects databaseNames
@@ -31,34 +32,38 @@ func New(ctx context.Context, config *Config) (*Pool, error) {
 	}
 
 	// Setup numpool database if needed
-	conn, err := config.DBPool.Acquire(ctx)
+	manager, err := numpool.Setup(ctx, config.DBPool)
 	if err != nil {
-		return nil, fmt.Errorf("failed to acquire connection: %w", err)
-	}
-	defer conn.Release()
-
-	if err := numpool.Setup(ctx, conn.Conn()); err != nil {
 		return nil, fmt.Errorf("failed to setup numpool: %w", err)
 	}
 
 	// Create or open numpool
-	np, err := numpool.CreateOrOpen(ctx, numpool.Config{
-		Pool:              config.DBPool,
+	np, err := manager.GetOrCreate(ctx, numpool.Config{
 		ID:                config.PoolID,
 		MaxResourcesCount: int32(config.MaxDatabases),
 	})
 	if err != nil {
+		manager.Close()
 		return nil, fmt.Errorf("failed to create numpool: %w", err)
 	}
 
 	pool := &Pool{
 		config:        config,
+		manager:       manager,
 		numpool:       np,
 		templateDB:    fmt.Sprintf("testdb_template_%s", config.PoolID),
 		databaseNames: make(map[int]string),
 	}
 
 	return pool, nil
+}
+
+// Close closes the pool and releases all resources.
+func (p *Pool) Close() {
+	if p.manager != nil {
+		p.manager.Close()
+		p.manager = nil
+	}
 }
 
 // Acquire obtains a test database from the pool.

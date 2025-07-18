@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
@@ -34,9 +35,7 @@ func TestPoolConcurrency(t *testing.T) {
 	}
 
 	testPool, err := testdbpool.New(ctx, config)
-	if err != nil {
-		t.Fatalf("failed to create pool: %v", err)
-	}
+	require.NoError(t, err, "failed to create pool")
 
 	// Test concurrent acquisition
 	t.Run("ConcurrentAcquire", func(t *testing.T) {
@@ -83,9 +82,7 @@ func TestPoolConcurrency(t *testing.T) {
 		var dbs []*testdbpool.TestDB
 		for i := range config.MaxDatabases {
 			db, err := testPool.Acquire(ctx)
-			if err != nil {
-				t.Fatalf("failed to acquire database %d: %v", i, err)
-			}
+			require.NoErrorf(t, err, "failed to acquire database %d", i)
 			dbs = append(dbs, db)
 		}
 
@@ -116,9 +113,7 @@ func TestPoolConcurrency(t *testing.T) {
 
 		// Now acquire should succeed
 		db, err := testPool.Acquire(ctx)
-		if err != nil {
-			t.Fatalf("failed to acquire after release: %v", err)
-		}
+		require.NoError(t, err, "failed to acquire after release")
 		defer func() { _ = db.Close() }()
 
 		// Clean up

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
@@ -93,15 +94,11 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		testPool, err := testdbpool.New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		require.NoError(t, err, "failed to create pool")
 
 		// Test the complex schema
 		db, err := testPool.Acquire(ctx)
-		if err != nil {
-			t.Fatalf("failed to acquire database: %v", err)
-		}
+		require.NoError(t, err, "failed to acquire database")
 		defer func() { _ = db.Close() }()
 
 		// Test enum type
@@ -110,7 +107,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			VALUES ('test@example.com', 'active', '{"role": "admin", "preferences": {"theme": "dark"}}')
 		`)
 		if err != nil {
-			t.Fatalf("failed to insert user: %v", err)
+			require.NoError(t, err, "failed to insert user")
 		}
 
 		// Test JSONB query
@@ -119,7 +116,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			SELECT metadata->>'role' FROM users WHERE email = 'test@example.com'
 		`).Scan(&role)
 		if err != nil {
-			t.Fatalf("failed to query JSONB: %v", err)
+			require.NoError(t, err, "failed to query JSONB")
 		}
 		if role != "admin" {
 			t.Errorf("expected role 'admin', got '%s'", role)
@@ -132,7 +129,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			FROM users WHERE email = 'test@example.com'
 		`)
 		if err != nil {
-			t.Fatalf("failed to insert post: %v", err)
+			require.NoError(t, err, "failed to insert post")
 		}
 
 		// Test view
@@ -142,7 +139,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			SELECT email, title, tag_count FROM active_user_posts LIMIT 1
 		`).Scan(&email, &title, &tagCount)
 		if err != nil {
-			t.Fatalf("failed to query view: %v", err)
+			require.NoError(t, err, "failed to query view")
 		}
 		if email != "test@example.com" {
 			t.Errorf("expected email 'test@example.com', got '%s'", email)
@@ -157,7 +154,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			SELECT modified::text FROM users WHERE email = 'test@example.com'
 		`).Scan(&oldModified)
 		if err != nil {
-			t.Fatalf("failed to get old modified: %v", err)
+			require.NoError(t, err, "failed to get old modified")
 		}
 
 		// Update and verify trigger worked
@@ -165,7 +162,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			UPDATE users SET status = 'inactive' WHERE email = 'test@example.com'
 		`)
 		if err != nil {
-			t.Fatalf("failed to update user: %v", err)
+			require.NoError(t, err, "failed to update user")
 		}
 
 		var newModified string
@@ -173,7 +170,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 			SELECT modified::text FROM users WHERE email = 'test@example.com'
 		`).Scan(&newModified)
 		if err != nil {
-			t.Fatalf("failed to get new modified: %v", err)
+			require.NoError(t, err, "failed to get new modified")
 		}
 
 		if oldModified == newModified {
@@ -210,20 +207,18 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		}
 
 		testPool, err := testdbpool.New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		require.NoError(t, err, "failed to create pool")
 
 		// Test that separate database instances are truly isolated
 		db1, err := testPool.Acquire(ctx)
 		if err != nil {
-			t.Fatalf("failed to acquire database 1: %v", err)
+			require.NoError(t, err, "failed to acquire database 1")
 		}
 		defer func() { _ = db1.Close() }()
 
 		db2, err := testPool.Acquire(ctx)
 		if err != nil {
-			t.Fatalf("failed to acquire database 2: %v", err)
+			require.NoError(t, err, "failed to acquire database 2")
 		}
 		defer func() { _ = db2.Close() }()
 
@@ -235,14 +230,14 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		// Modify data in db1
 		_, err = db1.Pool().Exec(ctx, "UPDATE accounts SET balance = 999.00 WHERE name = 'Alice'")
 		if err != nil {
-			t.Fatalf("failed to update Alice in db1: %v", err)
+			require.NoError(t, err, "failed to update Alice in db1")
 		}
 
 		// Check that db2 is unaffected (different database)
 		var aliceBalance float64
 		err = db2.Pool().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
 		if err != nil {
-			t.Fatalf("failed to query Alice balance in db2: %v", err)
+			require.NoError(t, err, "failed to query Alice balance in db2")
 		}
 		if aliceBalance != 1000.00 {
 			t.Errorf("expected Alice balance 1000.00 in db2 (isolated), got %f", aliceBalance)
@@ -251,7 +246,7 @@ func TestPostgreSQLFeatures(t *testing.T) {
 		// Verify db1 has the changed value
 		err = db1.Pool().QueryRow(ctx, "SELECT balance FROM accounts WHERE name = 'Alice'").Scan(&aliceBalance)
 		if err != nil {
-			t.Fatalf("failed to query Alice balance in db1: %v", err)
+			require.NoError(t, err, "failed to query Alice balance in db1")
 		}
 		if aliceBalance != 999.00 {
 			t.Errorf("expected Alice balance 999.00 in db1, got %f", aliceBalance)

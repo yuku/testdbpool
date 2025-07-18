@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	"github.com/yuku/numpool"
 )
 
@@ -135,7 +136,7 @@ func TestConfig_ValidateDefaultMaxDatabases(t *testing.T) {
 
 	err := config.Validate()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		require.NoError(t, err, "unexpected error")
 	}
 
 	// Check that MaxDatabases was set to the expected default
@@ -166,7 +167,7 @@ func TestConfig_ValidateDefaultMaxDatabases(t *testing.T) {
 
 	err = config2.Validate()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		require.NoError(t, err, "unexpected error")
 	}
 
 	// Should be capped at numpool.MaxResourcesLimit

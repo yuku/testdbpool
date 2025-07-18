@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
 	"github.com/yuku/testdbpool/internal/testhelper"
 )
@@ -39,26 +40,20 @@ func TestPoolIntegration(t *testing.T) {
 
 		// Create pool
 		testPool, err := testdbpool.New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		require.NoError(t, err, "failed to create pool")
 
 		// Use timeout to prevent hanging
 		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
 		db, err := testPool.Acquire(acquireCtx)
-		if err != nil {
-			t.Fatalf("failed to acquire database: %v", err)
-		}
+		require.NoError(t, err, "failed to acquire database")
 		defer func() { _ = db.Close() }()
 
 		// Verify we can use the connection
 		var result int
 		err = db.Pool().QueryRow(ctx, "SELECT 1").Scan(&result)
-		if err != nil {
-			t.Fatalf("failed to query: %v", err)
-		}
+		require.NoError(t, err, "failed to query")
 		if result != 1 {
 			t.Errorf("expected 1, got %d", result)
 		}
@@ -71,9 +66,7 @@ func TestPoolIntegration(t *testing.T) {
 				WHERE table_name = 'test_table'
 			)
 		`).Scan(&exists)
-		if err != nil {
-			t.Fatalf("failed to check table existence: %v", err)
-		}
+		require.NoError(t, err, "failed to check table existence")
 		if !exists {
 			t.Error("test_table should exist")
 		}
@@ -98,9 +91,7 @@ func TestPoolIntegration(t *testing.T) {
 		}
 
 		testPool, err := testdbpool.New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		require.NoError(t, err, "failed to create pool")
 
 		// Use timeout
 		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -110,9 +101,7 @@ func TestPoolIntegration(t *testing.T) {
 		var dbs []*testdbpool.TestDB
 		for i := range config.MaxDatabases {
 			db, err := testPool.Acquire(acquireCtx)
-			if err != nil {
-				t.Fatalf("failed to acquire database %d: %v", i, err)
-			}
+			require.NoErrorf(t, err, "failed to acquire database %d", i)
 			dbs = append(dbs, db)
 		}
 
@@ -127,16 +116,13 @@ func TestPoolIntegration(t *testing.T) {
 
 		// Release all databases
 		for _, db := range dbs {
-			if err := db.Release(ctx); err != nil {
-				t.Fatalf("failed to release database: %v", err)
-			}
+			err := db.Release(ctx)
+			require.NoError(t, err, "failed to release database")
 		}
 
 		// Acquire again to verify reuse
 		db, err := testPool.Acquire(acquireCtx)
-		if err != nil {
-			t.Fatalf("failed to re-acquire database: %v", err)
-		}
+		require.NoError(t, err, "failed to re-acquire database")
 		defer func() { _ = db.Close() }()
 
 		// Verify it's one of the previously used databases
@@ -164,31 +150,23 @@ func TestPoolIntegration(t *testing.T) {
 		}
 
 		testPool, err := testdbpool.New(ctx, config)
-		if err != nil {
-			t.Fatalf("failed to create pool: %v", err)
-		}
+		require.NoError(t, err, "failed to create pool")
 
 		// Use timeout
 		acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
 		db, err := testPool.Acquire(acquireCtx)
-		if err != nil {
-			t.Fatalf("failed to acquire database: %v", err)
-		}
+		require.NoError(t, err, "failed to acquire database")
 
 		// Insert data
 		_, err = db.Pool().Exec(ctx, "INSERT INTO test_table (name) VALUES ('test')")
-		if err != nil {
-			t.Fatalf("failed to insert: %v", err)
-		}
+		require.NoError(t, err, "failed to insert")
 
 		// Verify data exists
 		var count int
 		err = db.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count)
-		if err != nil {
-			t.Fatalf("failed to count: %v", err)
-		}
+		require.NoError(t, err, "failed to count")
 		if count != 1 {
 			t.Errorf("expected 1 row, got %d", count)
 		}
@@ -200,17 +178,13 @@ func TestPoolIntegration(t *testing.T) {
 		// Try to acquire the same database again
 		for range 2 {
 			db2, err := testPool.Acquire(acquireCtx)
-			if err != nil {
-				t.Fatalf("failed to re-acquire: %v", err)
-			}
+			require.NoError(t, err, "failed to re-acquire")
 
 			if db2.DatabaseName() == dbName {
 				// Found the same database, verify it was reset
 				var count2 int
 				err = db2.Pool().QueryRow(ctx, "SELECT COUNT(*) FROM test_table").Scan(&count2)
-				if err != nil {
-					t.Fatalf("failed to count after reset: %v", err)
-				}
+				require.NoError(t, err, "failed to count after reset")
 				if count2 != 0 {
 					t.Errorf("expected 0 rows after reset, got %d", count2)
 				}
