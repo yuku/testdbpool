@@ -175,7 +175,7 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 	require.NotNil(t, pool)
 	t.Cleanup(pool.Cleanup)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
 	n := 3 // Reduce concurrency significantly for CI stability
@@ -398,7 +398,7 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 		pools[i] = pool
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
 	n := 3 // Reduce concurrency significantly for CI stability
