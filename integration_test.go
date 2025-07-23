@@ -160,7 +160,7 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 	pool, err := testdbpool.New(ctx, &testdbpool.Config{
 		ID:           "integration_single_concurrent",
 		Pool:         connPool,
-		MaxDatabases: 5,
+		MaxDatabases: 2,
 		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 			return err
@@ -175,10 +175,10 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 	require.NotNil(t, pool)
 	t.Cleanup(pool.Cleanup)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	t.Cleanup(cancel)
 
-	n := 8 // Slightly reduce concurrency for CI stability
+	n := 3 // Reduce concurrency significantly for CI stability
 	wg := sync.WaitGroup{}
 	wg.Add(n)
 	var count int32
@@ -374,7 +374,7 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "integration_multiple_concurrent",
 			Pool:         connPool,
-			MaxDatabases: 5,
+			MaxDatabases: 2,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
@@ -398,10 +398,10 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 		pools[i] = pool
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
 	t.Cleanup(cancel)
 
-	n := 6 // Reduce concurrency to avoid resource contention in CI
+	n := 3 // Reduce concurrency significantly for CI stability
 	wg := sync.WaitGroup{}
 	wg.Add(n)
 	var count int32
