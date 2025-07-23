@@ -208,7 +208,7 @@ func (t *TemplateDB) Cleanup(ctx context.Context) error {
 		return nil // Template database not set up, nothing to clean up
 	}
 
-	_, err := t.cfg.ConnPool.Exec(context.Background(), fmt.Sprintf(
+	_, err := t.cfg.ConnPool.Exec(ctx, fmt.Sprintf(
 		`DROP DATABASE IF EXISTS %s`, t.SanitizedName(),
 	))
 	if err != nil {
