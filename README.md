@@ -1,5 +1,8 @@
 # testdbpool
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/yuku/testdbpool.svg)](https://pkg.go.dev/github.com/yuku/testdbpool)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/yuku/testdbpool)
+
 A Go library for managing a pool of test databases in PostgreSQL. Built on top of [numpool](https://github.com/yuku/numpool), testdbpool provides efficient test database management with automatic cleanup and concurrent access support.
 
 ## Features
