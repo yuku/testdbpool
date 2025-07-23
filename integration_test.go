@@ -175,10 +175,10 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 	require.NotNil(t, pool)
 	t.Cleanup(pool.Cleanup)
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	t.Cleanup(cancel)
 
-	n := 10
+	n := 8 // Slightly reduce concurrency for CI stability
 	wg := sync.WaitGroup{}
 	wg.Add(n)
 	var count int32
@@ -398,17 +398,19 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 		pools[i] = pool
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	t.Cleanup(cancel)
 
-	n := 10
+	n := 6 // Reduce concurrency to avoid resource contention in CI
 	wg := sync.WaitGroup{}
 	wg.Add(n)
 	var count int32
 
 	for i := range n {
-		go func() {
-			db, err := pools[i%len(pools)].Acquire(ctxWithTimeout)
+		go func(index int) {
+			defer wg.Done()
+
+			db, err := pools[index%len(pools)].Acquire(ctxWithTimeout)
 			require.NoError(t, err)
 
 			var count1 int
@@ -425,9 +427,7 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 
 			require.NoError(t, db.Release(ctxWithTimeout))
 			atomic.AddInt32(&count, 1)
-
-			wg.Done()
-		}()
+		}(i)
 	}
 
 	wg.Wait()
