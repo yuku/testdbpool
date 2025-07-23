@@ -165,9 +165,9 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Make a copy to avoid modifying the original test case
 			config := tt.config
-			
+
 			err := config.Validate()
-			
+
 			if tt.wantErr {
 				assert.Error(t, err, "Expected validation to fail")
 				if tt.errMsg != "" {
@@ -175,7 +175,7 @@ func TestConfig_Validate(t *testing.T) {
 				}
 			} else {
 				assert.NoError(t, err, "Expected validation to pass")
-				
+
 				// Run additional checks if provided
 				if tt.checkFunc != nil {
 					tt.checkFunc(t, &config)

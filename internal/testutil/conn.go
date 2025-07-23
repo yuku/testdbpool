@@ -32,3 +32,13 @@ func CleanupNumpool(pool *pgxpool.Pool) func() {
 		_ = numpool.Cleanup(context.Background(), pool)
 	}
 }
+
+func DBExists(t *testing.T, pool *pgxpool.Pool, dbName string) bool {
+	t.Helper()
+	var exists bool
+	err := pool.
+		QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).
+		Scan(&exists)
+	require.NoError(t, err)
+	return exists
+}
