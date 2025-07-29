@@ -262,63 +262,19 @@ When working with evolving database schemas, you may want to ensure that test po
 package mytest
 
 import (
-    "crypto/rand"
     "fmt"
     "log"
-    "os/exec"
-    "path/filepath"
-    "strings"
+    
+    "github.com/yuku/testdbpool/gitutil"
 )
-
-// getSchemaVersion gets git revision of schema file, or random value if unstaged changes exist
-func getSchemaVersion() string {
-    schemaPath := "db/schema.sql" // Path to your schema file
-    
-    // Check if file has unstaged changes
-    cmd := exec.Command("git", "diff", "--name-only", schemaPath)
-    output, err := cmd.Output()
-    if err != nil {
-        log.Printf("Warning: git diff failed: %v", err)
-        return generateRandomVersion()
-    }
-    
-    // If file has unstaged changes, use random value to force new DB
-    if strings.TrimSpace(string(output)) != "" {
-        log.Printf("Schema file %s has unstaged changes, using random pool version", schemaPath)
-        return generateRandomVersion()
-    }
-    
-    // Get git revision of the schema file
-    cmd = exec.Command("git", "log", "-n", "1", "--pretty=format:%H", schemaPath)
-    output, err = cmd.Output()
-    if err != nil {
-        log.Printf("Warning: git log failed: %v", err)
-        return generateRandomVersion()
-    }
-    
-    revision := strings.TrimSpace(string(output))
-    if len(revision) >= 8 {
-        return revision[:8] // Use first 8 chars of commit hash
-    }
-    
-    return generateRandomVersion()
-}
-
-func generateRandomVersion() string {
-    bytes := make([]byte, 4)
-    if _, err := rand.Read(bytes); err != nil {
-        log.Printf("Warning: random generation failed: %v", err)
-        return "unknown"
-    }
-    return fmt.Sprintf("%x", bytes)
-}
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
     connPool, _ := pgxpool.New(ctx, "postgres://localhost/postgres")
     
     // Create pool ID with schema version
-    schemaVersion := getSchemaVersion()
+    schemaFiles := []string{"db/schema.sql", "db/migrations.sql"} // Your schema files
+    schemaVersion := gitutil.GetSchemaVersion(schemaFiles)
     poolID := fmt.Sprintf("myapp-test-%s", schemaVersion)
     
     config := &testdbpool.Config{
@@ -365,10 +321,6 @@ func main() {
     }
     defer connPool.Close()
     
-    // Calculate current schema version
-    currentVersion := getSchemaVersion()
-    currentPoolID := fmt.Sprintf("myapp-test-%s", currentVersion)
-    
     // List all pools with our prefix
     pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
     if err != nil {
@@ -380,23 +332,16 @@ func main() {
     
     // Clean up old pools
     for _, poolID := range pools {
-        if poolID != currentPoolID {
-            log.Printf("Cleaning up old pool: %s", poolID)
-            if err := testdbpool.CleanupPool(ctx, connPool, poolID); err != nil {
-                log.Printf("Warning: Failed to cleanup %s: %v", poolID, err)
-            } else {
-                log.Printf("Successfully cleaned up: %s", poolID)
-            }
+        if err := testdbpool.CleanupPool(ctx, connPool, poolID); err != nil {
+            log.Printf("Warning: Failed to cleanup %s: %v", poolID, err)
         }
     }
     
     log.Printf("Cleanup complete. Current pool '%s' preserved.", currentPoolID)
 }
 
-func getSchemaVersion() string {
-    // Same schema version calculation as in your tests
-    // This ensures consistency between tests and cleanup script
-}
+// Import and use the same gitutil.GetSchemaVersion function
+// This ensures consistency between tests and cleanup script
 ```
 
 This approach provides:
@@ -463,6 +408,23 @@ pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
 
 // Clean up a specific pool and all its resources
 err := testdbpool.CleanupPool(ctx, connPool, "myapp-test-old-hash")
+```
+
+### Git Utilities
+
+The `gitutil` subpackage provides convenient functions for Git-based schema versioning:
+
+```go
+import "github.com/yuku/testdbpool/gitutil"
+
+// Get git commit hash of the latest change to schema files
+revision, err := gitutil.GetFilesRevision([]string{"db/schema.sql", "db/migrations.sql"})
+
+// Check if schema files have unstaged changes
+hasChanges, err := gitutil.HasUnstagedChanges([]string{"db/schema.sql"})
+
+// Get schema version (git revision or random if unstaged changes exist)
+version := gitutil.GetSchemaVersion([]string{"db/schema.sql", "db/migrations.sql"})
 ```
 
 ### TestDB Interface
