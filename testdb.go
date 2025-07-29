@@ -3,7 +3,6 @@ package testdbpool
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,8 +32,6 @@ func (db *TestDB) Release(ctx context.Context) error {
 	// 1. First close the connection pool
 	if db.pool != nil {
 		db.pool.Close()
-		// Give a small moment for connections to fully close
-		time.Sleep(5 * time.Millisecond)
 	}
 
 	// 2. Drop the database to ensure complete cleanup
