@@ -256,42 +256,73 @@ func TestPostOperations(t *testing.T) {
 
 When working with evolving database schemas, you may want to ensure that test pools use the current schema version and clean up outdated pools. Here's how to implement this pattern:
 
-#### Pool ID with Schema Hash
+#### Pool ID with Git Revision
 
 ```go
 package mytest
 
 import (
-    "crypto/sha256"
+    "crypto/rand"
     "fmt"
+    "log"
+    "os/exec"
+    "path/filepath"
+    "strings"
 )
 
-// calculateSchemaHash generates a hash from your schema definition
-func calculateSchemaHash() string {
-    // Option 1: Hash your setup function or migration files
-    schemaContent := `
-        CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT, email TEXT UNIQUE);
-        CREATE TABLE posts (id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id));
-        CREATE INDEX idx_posts_user_id ON posts(user_id);
-    `
+// getSchemaVersion gets git revision of schema file, or random value if unstaged changes exist
+func getSchemaVersion() string {
+    schemaPath := "db/schema.sql" // Path to your schema file
     
-    // Option 2: Hash from migration files, git commit, or environment
-    // schemaContent := readMigrationFiles() + os.Getenv("SCHEMA_VERSION")
+    // Check if file has unstaged changes
+    cmd := exec.Command("git", "diff", "--name-only", schemaPath)
+    output, err := cmd.Output()
+    if err != nil {
+        log.Printf("Warning: git diff failed: %v", err)
+        return generateRandomVersion()
+    }
     
-    hash := sha256.Sum256([]byte(schemaContent))
-    return fmt.Sprintf("%x", hash[:4]) // Use first 8 hex chars
+    // If file has unstaged changes, use random value to force new DB
+    if strings.TrimSpace(string(output)) != "" {
+        log.Printf("Schema file %s has unstaged changes, using random pool version", schemaPath)
+        return generateRandomVersion()
+    }
+    
+    // Get git revision of the schema file
+    cmd = exec.Command("git", "log", "-n", "1", "--pretty=format:%H", schemaPath)
+    output, err = cmd.Output()
+    if err != nil {
+        log.Printf("Warning: git log failed: %v", err)
+        return generateRandomVersion()
+    }
+    
+    revision := strings.TrimSpace(string(output))
+    if len(revision) >= 8 {
+        return revision[:8] // Use first 8 chars of commit hash
+    }
+    
+    return generateRandomVersion()
+}
+
+func generateRandomVersion() string {
+    bytes := make([]byte, 4)
+    if _, err := rand.Read(bytes); err != nil {
+        log.Printf("Warning: random generation failed: %v", err)
+        return "unknown"
+    }
+    return fmt.Sprintf("%x", bytes)
 }
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
     connPool, _ := pgxpool.New(ctx, "postgres://localhost/postgres")
     
-    // Create pool ID with schema hash
-    schemaHash := calculateSchemaHash()
-    poolID := fmt.Sprintf("myapp-test-%s", schemaHash)
+    // Create pool ID with schema version
+    schemaVersion := getSchemaVersion()
+    poolID := fmt.Sprintf("myapp-test-%s", schemaVersion)
     
     config := &testdbpool.Config{
-        ID:            poolID, // e.g., "myapp-test-a1b2c3d4"
+        ID:            poolID, // e.g., "myapp-test-a1b2c3d4" or "myapp-test-f4e9a2b1" (random)
         Pool:          connPool,
         SetupTemplate: setupCurrentSchema,
         ResetDatabase: resetData,
@@ -334,9 +365,9 @@ func main() {
     }
     defer connPool.Close()
     
-    // Calculate current schema hash
-    currentHash := calculateSchemaHash()
-    currentPoolID := fmt.Sprintf("myapp-test-%s", currentHash)
+    // Calculate current schema version
+    currentVersion := getSchemaVersion()
+    currentPoolID := fmt.Sprintf("myapp-test-%s", currentVersion)
     
     // List all pools with our prefix
     pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
@@ -362,50 +393,17 @@ func main() {
     log.Printf("Cleanup complete. Current pool '%s' preserved.", currentPoolID)
 }
 
-func calculateSchemaHash() string {
-    // Same hash calculation as in your tests
+func getSchemaVersion() string {
+    // Same schema version calculation as in your tests
     // This ensures consistency between tests and cleanup script
 }
 ```
 
-#### Integration with CI/CD
-
-Add the cleanup script to your CI pipeline:
-
-```yaml
-# .github/workflows/test.yml
-- name: Run tests with clean pools
-  run: |
-    # Clean up old test pools before running tests
-    go run scripts/cleanup-old-pools.go
-    
-    # Run tests (will create new pools if schema changed)
-    go test ./...
-    
-    # Optional: Clean up after tests (keep for debugging)
-    # go run scripts/cleanup-old-pools.go
-```
-
-Or use it as a pre-test step in your Makefile:
-
-```makefile
-.PHONY: test-clean
-test-clean:
-	@echo "Cleaning up old test pools..."
-	@go run scripts/cleanup-old-pools.go
-	@echo "Running tests..."
-	@go test ./...
-
-.PHONY: cleanup-pools
-cleanup-pools:
-	@go run scripts/cleanup-old-pools.go
-```
-
 This approach provides:
-- **Automatic schema versioning**: Pools are automatically isolated by schema version
-- **Efficient resource usage**: Old pools don't consume database resources
-- **Development workflow**: Developers can safely iterate on schema changes
-- **CI optimization**: Clean environment for each test run without manual intervention
+- **Automatic schema versioning**: Pools are automatically isolated by schema version based on git commits
+- **Development safety**: Unstaged changes force new database creation to avoid conflicts
+- **Efficient resource usage**: Old pools don't consume database resources during development
+- **Development workflow**: Developers can safely iterate on schema changes without manual pool management
 
 ### Integration Test Examples
 
