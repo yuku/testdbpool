@@ -45,8 +45,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install tparse
+        run: go install github.com/mfridman/tparse@latest
       - name: Run main tests
-        run: go test -json -race -timeout 30s ./... | go tool tparse -all
+        run: go test -json -race -timeout 30s ./... | tparse -all
 
   golangci:
     name: Lint
