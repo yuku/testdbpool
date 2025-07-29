@@ -91,6 +91,21 @@
 // resource exhaustion. The MaxDatabases configuration controls the pool size, defaulting
 // to min(GOMAXPROCS, 64) for optimal performance.
 //
+// # Schema Versioning and Cleanup
+//
+// For evolving database schemas, testdbpool supports cleanup operations to manage pools
+// across different schema versions:
+//
+//	// List existing pools for cleanup
+//	pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
+//
+//	// Remove outdated pools
+//	err := testdbpool.CleanupPool(ctx, connPool, "myapp-test-old-hash")
+//
+// Users can implement automatic schema versioning by including schema hashes in pool IDs,
+// ensuring that schema changes trigger new pool creation while old pools are cleaned up
+// through dedicated cleanup scripts.
+//
 // # Requirements
 //
 //   - PostgreSQL 14 or higher (for reliable template database support)

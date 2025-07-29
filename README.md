@@ -252,6 +252,104 @@ func TestPostOperations(t *testing.T) {
 }
 ```
 
+### Schema Version Management and Cleanup
+
+When working with evolving database schemas, you may want to ensure that test pools use the current schema version and clean up outdated pools. Here's how to implement this pattern:
+
+#### Pool ID with Git Revision
+
+```go
+package mytest
+
+import (
+    "fmt"
+    "log"
+    
+    "github.com/yuku/testdbpool/gitutil"
+)
+
+func TestMain(m *testing.M) {
+    ctx := context.Background()
+    connPool, _ := pgxpool.New(ctx, "postgres://localhost/postgres")
+    
+    // Create pool ID with schema version
+    schemaFiles := []string{"db/schema.sql", "db/migrations.sql"} // Your schema files
+    schemaVersion := gitutil.GetSchemaVersion(schemaFiles)
+    poolID := fmt.Sprintf("myapp-test-%s", schemaVersion)
+    
+    config := &testdbpool.Config{
+        ID:            poolID, // e.g., "myapp-test-a1b2c3d4" or "myapp-test-f4e9a2b1" (random)
+        Pool:          connPool,
+        SetupTemplate: setupCurrentSchema,
+        ResetDatabase: resetData,
+    }
+    
+    testPool, _ := testdbpool.New(ctx, config)
+    
+    code := m.Run()
+    
+    testPool.Cleanup()
+    connPool.Close()
+    os.Exit(code)
+}
+```
+
+#### Cleanup Script for Old Pools
+
+Create a standalone cleanup script to remove pools from previous schema versions:
+
+```go
+// scripts/cleanup-old-pools.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    "github.com/jackc/pgx/v5/pgxpool"
+    "github.com/yuku/testdbpool"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    // Connect to PostgreSQL
+    connPool, err := pgxpool.New(ctx, "postgres://localhost/postgres")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer connPool.Close()
+    
+    // List all pools with our prefix
+    pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Printf("Found %d pools with prefix 'myapp-test-'", len(pools))
+    log.Printf("Current pool ID: %s", currentPoolID)
+    
+    // Clean up old pools
+    for _, poolID := range pools {
+        if err := testdbpool.CleanupPool(ctx, connPool, poolID); err != nil {
+            log.Printf("Warning: Failed to cleanup %s: %v", poolID, err)
+        }
+    }
+    
+    log.Printf("Cleanup complete. Current pool '%s' preserved.", currentPoolID)
+}
+
+// Import and use the same gitutil.GetSchemaVersion function
+// This ensures consistency between tests and cleanup script
+```
+
+This approach provides:
+- **Automatic schema versioning**: Pools are automatically isolated by schema version based on git commits
+- **Development safety**: Unstaged changes force new database creation to avoid conflicts
+- **Efficient resource usage**: Old pools don't consume database resources during development
+- **Development workflow**: Developers can safely iterate on schema changes without manual pool management
+
 ### Integration Test Examples
 
 See the [integration tests](integration_test.go) for comprehensive examples of:
@@ -300,6 +398,33 @@ err := pool.Close(ctx)
 
 // Cleanup template and test databases (only call from one instance)
 pool.Cleanup()
+```
+
+### Pool Management Functions
+
+```go
+// List pools matching a prefix (useful for cleanup scripts)
+pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
+
+// Clean up a specific pool and all its resources
+err := testdbpool.CleanupPool(ctx, connPool, "myapp-test-old-hash")
+```
+
+### Git Utilities
+
+The `gitutil` subpackage provides convenient functions for Git-based schema versioning:
+
+```go
+import "github.com/yuku/testdbpool/gitutil"
+
+// Get git commit hash of the latest change to schema files
+revision, err := gitutil.GetFilesRevision([]string{"db/schema.sql", "db/migrations.sql"})
+
+// Check if schema files have unstaged changes
+hasChanges, err := gitutil.HasUnstagedChanges([]string{"db/schema.sql"})
+
+// Get schema version (git revision or random if unstaged changes exist)
+version := gitutil.GetSchemaVersion([]string{"db/schema.sql", "db/migrations.sql"})
 ```
 
 ### TestDB Interface

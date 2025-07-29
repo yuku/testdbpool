@@ -7,7 +7,7 @@ tool github.com/mfridman/tparse
 require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/stretchr/testify v1.9.0
-	github.com/yuku/numpool v0.4.2
+	github.com/yuku/numpool v0.4.4
 )
 
 require (
