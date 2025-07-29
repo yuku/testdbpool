@@ -3,7 +3,9 @@ package testdbpool
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
 )
@@ -28,9 +30,24 @@ type TestDB struct {
 // Release releases the TestDB back to the pool.
 // The database will be recreated from template on next acquisition.
 func (db *TestDB) Release(ctx context.Context) error {
-	// Close the connection pool - database will be dropped on next acquire
+	// 1. First close the connection pool
 	if db.pool != nil {
 		db.pool.Close()
+		// Give a small moment for connections to fully close
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// 2. Drop the database to ensure complete cleanup
+	if db.rootPool != nil {
+		dbName := db.Name()
+		_, err := db.rootPool.Exec(ctx, fmt.Sprintf(
+			"DROP DATABASE IF EXISTS %s",
+			pgx.Identifier{dbName}.Sanitize(),
+		))
+		if err != nil {
+			// Log error but don't fail the release - we still want to release the resource
+			fmt.Printf("Warning: failed to drop database %s: %v\n", dbName, err)
+		}
 	}
 
 	// Clear this TestDB from the pool's testDBs array

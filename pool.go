@@ -29,12 +29,6 @@ type Pool struct {
 	// The length of this slice is equal to MaxDatabases and each index corresponds
 	// to a resource index in the numpool.
 	testDBs []*TestDB
-
-	// dbPools is a slice of pgxpool.Pool instances that are used for the test databases.
-	// The length of this slice is equal to MaxDatabases and each index corresponds
-	// to a resource index in the numpool.
-	// This is used to keep track of the pgxpool.Pool instances for each test database.
-	dbPools []*pgxpool.Pool
 }
 
 type Config struct {
@@ -122,7 +116,6 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 		numPool:    numPool,
 		templateDB: templateDB,
 		testDBs:    make([]*TestDB, cfg.MaxDatabases),
-		dbPools:    make([]*pgxpool.Pool, cfg.MaxDatabases),
 	}, nil
 }
 
@@ -156,24 +149,10 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		return nil, fmt.Errorf("test database at index %d is already acquired", dbIndex)
 	}
 
-	// Always create a new database from template for complete isolation
+	// Create a new database from template for complete isolation
 	dbName := getTestDBName(p.cfg.ID, dbIndex)
-	
-	// Drop existing database if it exists (connection should be closed by now)
-	if p.dbPools[dbIndex] != nil {
-		_, err := p.cfg.Pool.Exec(ctx, fmt.Sprintf(
-			"DROP DATABASE IF EXISTS %s",
-			pgx.Identifier{dbName}.Sanitize(),
-		))
-		if err != nil {
-			if err2 := resource.Release(ctx); err2 != nil {
-				return nil, fmt.Errorf("failed to release resource after drop error: %w", err2)
-			}
-			return nil, fmt.Errorf("failed to drop existing database: %w", err)
-		}
-	}
-	
-	// Create a new database from template
+
+	// Create database from template (previous database should have been dropped in Release)
 	pool, err := p.templateDB.Create(ctx, dbName)
 	if err != nil {
 		if err2 := resource.Release(ctx); err2 != nil {
@@ -181,18 +160,16 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		}
 		return nil, fmt.Errorf("failed to create test database: %w", err)
 	}
-	p.dbPools[dbIndex] = pool
 
 	p.testDBs[dbIndex] = &TestDB{
 		poolID:   p.cfg.ID,
-		pool:     p.dbPools[dbIndex],
+		pool:     pool,
 		resource: resource,
 		rootPool: p.cfg.Pool,
 		onRelease: func(index int) {
 			if index < len(p.testDBs) {
 				p.testDBs[index] = nil
 			}
-			// Don't clear dbPools[index] here - we need it to track that a database exists to drop
 		},
 	}
 	return p.testDBs[dbIndex], nil
@@ -207,11 +184,6 @@ func (p *Pool) Close(ctx context.Context) error {
 			if err := testDB.Release(ctx); err != nil {
 				return fmt.Errorf("failed to release test database %s: %w", testDB.Name(), err)
 			}
-		}
-	}
-	for _, dbPool := range p.dbPools {
-		if dbPool != nil {
-			dbPool.Close()
 		}
 	}
 	p.manager.Close()
