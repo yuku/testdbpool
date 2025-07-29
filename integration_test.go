@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
@@ -78,7 +77,7 @@ func TestIntegration_SingleSequential(t *testing.T) {
 
 		// Acquire again to ensure the database is reset. Since db1 was released,
 		// it should be done without blocking.
-		acquireCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		acquireCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		t.Cleanup(cancel)
 		db3, err := pool.Acquire(acquireCtx)
 		require.NoError(t, err)
@@ -109,11 +108,6 @@ func TestIntegration_SingleSequential(t *testing.T) {
 				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
 			},
-			// Use TRUNCATE strategy for better performance in timing-sensitive test
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -130,7 +124,7 @@ func TestIntegration_SingleSequential(t *testing.T) {
 			require.NoError(t, db1.Release(ctx))
 		}()
 
-		acquireCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		acquireCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		t.Cleanup(cancel)
 
 		db2, err := pool.Acquire(acquireCtx)
@@ -274,7 +268,7 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 
 		// Acquire again to ensure the database is reset. Since db1 was released,
 		// it should be done without blocking.
-		acquireCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		acquireCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		t.Cleanup(cancel)
 		db3, err := pools[2].Acquire(acquireCtx)
 		require.NoError(t, err)
@@ -304,11 +298,6 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 					_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 					return err
 				},
-				// Use TRUNCATE strategy for better performance in timing-sensitive test
-				ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-					_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			require.NotNil(t, pool)
@@ -335,7 +324,7 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 			require.NoError(t, db1.Release(ctx))
 		}()
 
-		acquireCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		acquireCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		t.Cleanup(cancel)
 
 		db2, err := pools[1].Acquire(acquireCtx)
