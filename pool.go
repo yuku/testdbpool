@@ -25,6 +25,9 @@ type Pool struct {
 	// templateDB manages the template database used for creating test databases.
 	templateDB *templatedb.TemplateDB
 
+	// databaseManager handles database lifecycle based on selected strategy
+	databaseManager databaseManager
+
 	// testDBs is a slice of TestDB instances that have been acquired from this Pool.
 	// The length of this slice is equal to MaxDatabases and each index corresponds
 	// to a resource index in the numpool.
@@ -46,6 +49,11 @@ type Config struct {
 	// SetupTemplate is called once to set up the template database.
 	// The template database is used as a source for creating test databases.
 	SetupTemplate func(context.Context, *pgx.Conn) error
+
+	// ResetDatabase determines the database reset strategy:
+	// - nil: use DROP DATABASE strategy (complete isolation, slower)
+	// - function: use TRUNCATE strategy (performance optimized, pool reuse)
+	ResetDatabase func(context.Context, *pgxpool.Pool) error
 }
 
 // Validate checks if the configuration is valid.
@@ -72,6 +80,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SetupTemplate function is required")
 	}
 
+	// ResetDatabase is optional - determines strategy selection
+	// nil = drop strategy, non-nil = truncate strategy
+
 	return nil
 }
 
@@ -84,20 +95,34 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 		return nil, err
 	}
 
+	// Determine strategy and validate consistency
+	strategy := getStrategyType(cfg.ResetDatabase)
+	metadata, err := createStrategyMetadata(strategy)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create strategy metadata: %w", err)
+	}
+
 	// Setup numpool database if needed
 	manager, err := numpool.Setup(ctx, cfg.Pool)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup numpool: %w", err)
 	}
 
-	// Create or open numpool
+	// Create or open numpool with metadata
 	numPool, err := manager.GetOrCreate(ctx, numpool.Config{
 		ID:                cfg.ID,
 		MaxResourcesCount: int32(cfg.MaxDatabases),
+		Metadata:          metadata,
 	})
 	if err != nil {
 		manager.Close()
 		return nil, fmt.Errorf("failed to create numpool: %w", err)
+	}
+
+	// Validate strategy consistency with existing metadata
+	if err := validateStrategyConsistency(numPool.Metadata(), strategy); err != nil {
+		manager.Close()
+		return nil, err
 	}
 
 	templateDB, err := templatedb.New(&templatedb.Config{
@@ -110,12 +135,16 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 		return nil, fmt.Errorf("failed to create template database: %w", err)
 	}
 
+	// Create appropriate database manager based on strategy
+	databaseManager := createDatabaseManager(templateDB, cfg.Pool, cfg.ResetDatabase, cfg.MaxDatabases)
+
 	return &Pool{
-		cfg:        cfg,
-		manager:    manager,
-		numPool:    numPool,
-		templateDB: templateDB,
-		testDBs:    make([]*TestDB, cfg.MaxDatabases),
+		cfg:             cfg,
+		manager:         manager,
+		numPool:         numPool,
+		templateDB:      templateDB,
+		databaseManager: databaseManager,
+		testDBs:         make([]*TestDB, cfg.MaxDatabases),
 	}, nil
 }
 
@@ -149,23 +178,20 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		return nil, fmt.Errorf("test database at index %d is already acquired", dbIndex)
 	}
 
-	// Create a new database from template for complete isolation
-	dbName := getTestDBName(p.cfg.ID, dbIndex)
-
-	// Create database from template (previous database should have been dropped in Release)
-	pool, err := p.templateDB.Create(ctx, dbName)
+	// Delegate database acquisition to the strategy
+	pool, err := p.databaseManager.AcquireDatabase(ctx, p.cfg.ID, dbIndex)
 	if err != nil {
 		if err2 := resource.Release(ctx); err2 != nil {
 			return nil, fmt.Errorf("failed to release resource after error: %w", err2)
 		}
-		return nil, fmt.Errorf("failed to create test database: %w", err)
+		return nil, fmt.Errorf("failed to acquire database: %w", err)
 	}
 
 	p.testDBs[dbIndex] = &TestDB{
-		poolID:   p.cfg.ID,
-		pool:     pool,
-		resource: resource,
-		rootPool: p.cfg.Pool,
+		poolID:          p.cfg.ID,
+		pool:            pool,
+		resource:        resource,
+		databaseManager: p.databaseManager,
 		onRelease: func(index int) {
 			if index < len(p.testDBs) {
 				p.testDBs[index] = nil
@@ -186,6 +212,14 @@ func (p *Pool) Close(ctx context.Context) error {
 			}
 		}
 	}
+
+	// Close the database manager
+	if p.databaseManager != nil {
+		if err := p.databaseManager.Close(ctx); err != nil {
+			return fmt.Errorf("failed to close database manager: %w", err)
+		}
+	}
+
 	p.manager.Close()
 	p.testDBs = nil
 	return nil

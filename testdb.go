@@ -3,9 +3,7 @@ package testdbpool
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
 )
@@ -20,34 +18,19 @@ type TestDB struct {
 	// resource is the numpool.Resource that was acquired for this TestDB.
 	resource *numpool.Resource
 
-	// rootPool is the root connection pool used for database operations
-	rootPool *pgxpool.Pool
+	// databaseManager handles database lifecycle operations
+	databaseManager databaseManager
 
 	// onRelease is called when this TestDB is released to clear it from the pool.
 	onRelease func(int)
 }
 
 // Release releases the TestDB back to the pool.
-// The database will be recreated from template on next acquisition.
+// The database will be reset according to the configured strategy.
 func (db *TestDB) Release(ctx context.Context) error {
-	// 1. First close the connection pool
-	if db.pool != nil {
-		db.pool.Close()
-		// Give a small moment for connections to fully close
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	// 2. Drop the database to ensure complete cleanup
-	if db.rootPool != nil {
-		dbName := db.Name()
-		_, err := db.rootPool.Exec(ctx, fmt.Sprintf(
-			"DROP DATABASE IF EXISTS %s",
-			pgx.Identifier{dbName}.Sanitize(),
-		))
-		if err != nil {
-			// Log error but don't fail the release - we still want to release the resource
-			fmt.Printf("Warning: failed to drop database %s: %v\n", dbName, err)
-		}
+	// Delegate database cleanup to the strategy first
+	if err := db.databaseManager.ReleaseDatabase(ctx, db.poolID, db.resource.Index(), db.pool); err != nil {
+		return fmt.Errorf("failed to release database: %w", err)
 	}
 
 	// Clear this TestDB from the pool's testDBs array
@@ -55,7 +38,7 @@ func (db *TestDB) Release(ctx context.Context) error {
 		db.onRelease(db.resource.Index())
 	}
 
-	// Release the resource back to the numpool.
+	// Release the resource back to the numpool
 	return db.resource.Release(ctx)
 }
 
