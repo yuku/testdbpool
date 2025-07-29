@@ -18,6 +18,9 @@ type TestDB struct {
 	// resource is the numpool.Resource that was acquired for this TestDB.
 	resource *numpool.Resource
 
+	// rootPool is the root connection pool used for database operations
+	rootPool *pgxpool.Pool
+
 	// onRelease is called when this TestDB is released to clear it from the pool.
 	onRelease func(int)
 }
@@ -25,6 +28,11 @@ type TestDB struct {
 // Release releases the TestDB back to the pool.
 // The database will be recreated from template on next acquisition.
 func (db *TestDB) Release(ctx context.Context) error {
+	// Close the connection pool - database will be dropped on next acquire
+	if db.pool != nil {
+		db.pool.Close()
+	}
+
 	// Clear this TestDB from the pool's testDBs array
 	if db.onRelease != nil {
 		db.onRelease(db.resource.Index())
@@ -40,7 +48,8 @@ func (db *TestDB) Pool() *pgxpool.Pool {
 }
 
 func (db *TestDB) Name() string {
-	return getTestDBName(db.poolID, db.resource.Index())
+	// Extract database name from the pool configuration
+	return db.pool.Config().ConnConfig.Database
 }
 
 func getTestDBName(poolID string, index int) string {

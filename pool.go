@@ -156,25 +156,43 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		return nil, fmt.Errorf("test database at index %d is already acquired", dbIndex)
 	}
 
-	if p.dbPools[dbIndex] == nil {
-		pool, err := p.templateDB.Create(ctx, getTestDBName(p.cfg.ID, dbIndex))
+	// Always create a new database from template for complete isolation
+	dbName := getTestDBName(p.cfg.ID, dbIndex)
+	
+	// Drop existing database if it exists (connection should be closed by now)
+	if p.dbPools[dbIndex] != nil {
+		_, err := p.cfg.Pool.Exec(ctx, fmt.Sprintf(
+			"DROP DATABASE IF EXISTS %s",
+			pgx.Identifier{dbName}.Sanitize(),
+		))
 		if err != nil {
 			if err2 := resource.Release(ctx); err2 != nil {
-				return nil, fmt.Errorf("failed to release resource after error: %w", err2)
+				return nil, fmt.Errorf("failed to release resource after drop error: %w", err2)
 			}
-			return nil, fmt.Errorf("failed to create test database: %w", err)
+			return nil, fmt.Errorf("failed to drop existing database: %w", err)
 		}
-		p.dbPools[dbIndex] = pool
 	}
+	
+	// Create a new database from template
+	pool, err := p.templateDB.Create(ctx, dbName)
+	if err != nil {
+		if err2 := resource.Release(ctx); err2 != nil {
+			return nil, fmt.Errorf("failed to release resource after error: %w", err2)
+		}
+		return nil, fmt.Errorf("failed to create test database: %w", err)
+	}
+	p.dbPools[dbIndex] = pool
 
 	p.testDBs[dbIndex] = &TestDB{
 		poolID:   p.cfg.ID,
 		pool:     p.dbPools[dbIndex],
 		resource: resource,
+		rootPool: p.cfg.Pool,
 		onRelease: func(index int) {
 			if index < len(p.testDBs) {
 				p.testDBs[index] = nil
 			}
+			// Don't clear dbPools[index] here - we need it to track that a database exists to drop
 		},
 	}
 	return p.testDBs[dbIndex], nil
