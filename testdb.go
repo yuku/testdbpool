@@ -18,23 +18,13 @@ type TestDB struct {
 	// resource is the numpool.Resource that was acquired for this TestDB.
 	resource *numpool.Resource
 
-	// reset is the function that resets the database to a clean state.
-	reset func(context.Context, *pgxpool.Pool) error
-
 	// onRelease is called when this TestDB is released to clear it from the pool.
 	onRelease func(int)
 }
 
 // Release releases the TestDB back to the pool.
-// It resets the database to a clean state using the ResetDatabase function
-// defined in the Pool configuration.
+// The database will be recreated from template on next acquisition.
 func (db *TestDB) Release(ctx context.Context) error {
-	if db.reset != nil {
-		if err := db.reset(ctx, db.pool); err != nil {
-			return fmt.Errorf("failed to reset database: %w", err)
-		}
-	}
-
 	// Clear this TestDB from the pool's testDBs array
 	if db.onRelease != nil {
 		db.onRelease(db.resource.Index())

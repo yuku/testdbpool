@@ -52,10 +52,6 @@ type Config struct {
 	// SetupTemplate is called once to set up the template database.
 	// The template database is used as a source for creating test databases.
 	SetupTemplate func(context.Context, *pgx.Conn) error
-
-	// ResetDatabase is called before releasing a test database back to the pool.
-	// It should restore the database to a clean state for the next use.
-	ResetDatabase func(context.Context, *pgxpool.Pool) error
 }
 
 // Validate checks if the configuration is valid.
@@ -80,10 +76,6 @@ func (c *Config) Validate() error {
 
 	if c.SetupTemplate == nil {
 		return fmt.Errorf("SetupTemplate function is required")
-	}
-
-	if c.ResetDatabase == nil {
-		return fmt.Errorf("ResetDatabase function is required")
 	}
 
 	return nil
@@ -179,7 +171,6 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		poolID:   p.cfg.ID,
 		pool:     p.dbPools[dbIndex],
 		resource: resource,
-		reset:    p.cfg.ResetDatabase,
 		onRelease: func(index int) {
 			if index < len(p.testDBs) {
 				p.testDBs[index] = nil

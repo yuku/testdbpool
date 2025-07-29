@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
@@ -34,10 +33,6 @@ func TestIntegration_SingleSequential(t *testing.T) {
 			MaxDatabases: 2,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
 				return err
 			},
 		})
@@ -113,10 +108,6 @@ func TestIntegration_SingleSequential(t *testing.T) {
 				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -163,10 +154,6 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 		MaxDatabases: 2,
 		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-			return err
-		},
-		ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-			_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
 			return err
 		},
 	})
@@ -231,10 +218,6 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 				MaxDatabases: 2,
 				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 					_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-					return err
-				},
-				ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-					_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
 					return err
 				},
 			})
@@ -315,10 +298,6 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 					_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
 					return err
 				},
-				ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-					_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			require.NotNil(t, pool)
@@ -377,10 +356,6 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 			MaxDatabases: 2,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE foos RESTART IDENTITY`)
 				return err
 			},
 		})
