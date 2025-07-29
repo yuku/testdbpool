@@ -252,6 +252,161 @@ func TestPostOperations(t *testing.T) {
 }
 ```
 
+### Schema Version Management and Cleanup
+
+When working with evolving database schemas, you may want to ensure that test pools use the current schema version and clean up outdated pools. Here's how to implement this pattern:
+
+#### Pool ID with Schema Hash
+
+```go
+package mytest
+
+import (
+    "crypto/sha256"
+    "fmt"
+)
+
+// calculateSchemaHash generates a hash from your schema definition
+func calculateSchemaHash() string {
+    // Option 1: Hash your setup function or migration files
+    schemaContent := `
+        CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT, email TEXT UNIQUE);
+        CREATE TABLE posts (id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id));
+        CREATE INDEX idx_posts_user_id ON posts(user_id);
+    `
+    
+    // Option 2: Hash from migration files, git commit, or environment
+    // schemaContent := readMigrationFiles() + os.Getenv("SCHEMA_VERSION")
+    
+    hash := sha256.Sum256([]byte(schemaContent))
+    return fmt.Sprintf("%x", hash[:4]) // Use first 8 hex chars
+}
+
+func TestMain(m *testing.M) {
+    ctx := context.Background()
+    connPool, _ := pgxpool.New(ctx, "postgres://localhost/postgres")
+    
+    // Create pool ID with schema hash
+    schemaHash := calculateSchemaHash()
+    poolID := fmt.Sprintf("myapp-test-%s", schemaHash)
+    
+    config := &testdbpool.Config{
+        ID:            poolID, // e.g., "myapp-test-a1b2c3d4"
+        Pool:          connPool,
+        SetupTemplate: setupCurrentSchema,
+        ResetDatabase: resetData,
+    }
+    
+    testPool, _ := testdbpool.New(ctx, config)
+    
+    code := m.Run()
+    
+    testPool.Cleanup()
+    connPool.Close()
+    os.Exit(code)
+}
+```
+
+#### Cleanup Script for Old Pools
+
+Create a standalone cleanup script to remove pools from previous schema versions:
+
+```go
+// scripts/cleanup-old-pools.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    "github.com/jackc/pgx/v5/pgxpool"
+    "github.com/yuku/testdbpool"
+)
+
+func main() {
+    ctx := context.Background()
+    
+    // Connect to PostgreSQL
+    connPool, err := pgxpool.New(ctx, "postgres://localhost/postgres")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer connPool.Close()
+    
+    // Calculate current schema hash
+    currentHash := calculateSchemaHash()
+    currentPoolID := fmt.Sprintf("myapp-test-%s", currentHash)
+    
+    // List all pools with our prefix
+    pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Printf("Found %d pools with prefix 'myapp-test-'", len(pools))
+    log.Printf("Current pool ID: %s", currentPoolID)
+    
+    // Clean up old pools
+    for _, poolID := range pools {
+        if poolID != currentPoolID {
+            log.Printf("Cleaning up old pool: %s", poolID)
+            if err := testdbpool.CleanupPool(ctx, connPool, poolID); err != nil {
+                log.Printf("Warning: Failed to cleanup %s: %v", poolID, err)
+            } else {
+                log.Printf("Successfully cleaned up: %s", poolID)
+            }
+        }
+    }
+    
+    log.Printf("Cleanup complete. Current pool '%s' preserved.", currentPoolID)
+}
+
+func calculateSchemaHash() string {
+    // Same hash calculation as in your tests
+    // This ensures consistency between tests and cleanup script
+}
+```
+
+#### Integration with CI/CD
+
+Add the cleanup script to your CI pipeline:
+
+```yaml
+# .github/workflows/test.yml
+- name: Run tests with clean pools
+  run: |
+    # Clean up old test pools before running tests
+    go run scripts/cleanup-old-pools.go
+    
+    # Run tests (will create new pools if schema changed)
+    go test ./...
+    
+    # Optional: Clean up after tests (keep for debugging)
+    # go run scripts/cleanup-old-pools.go
+```
+
+Or use it as a pre-test step in your Makefile:
+
+```makefile
+.PHONY: test-clean
+test-clean:
+	@echo "Cleaning up old test pools..."
+	@go run scripts/cleanup-old-pools.go
+	@echo "Running tests..."
+	@go test ./...
+
+.PHONY: cleanup-pools
+cleanup-pools:
+	@go run scripts/cleanup-old-pools.go
+```
+
+This approach provides:
+- **Automatic schema versioning**: Pools are automatically isolated by schema version
+- **Efficient resource usage**: Old pools don't consume database resources
+- **Development workflow**: Developers can safely iterate on schema changes
+- **CI optimization**: Clean environment for each test run without manual intervention
+
 ### Integration Test Examples
 
 See the [integration tests](integration_test.go) for comprehensive examples of:
@@ -300,6 +455,16 @@ err := pool.Close(ctx)
 
 // Cleanup template and test databases (only call from one instance)
 pool.Cleanup()
+```
+
+### Pool Management Functions
+
+```go
+// List pools matching a prefix (useful for cleanup scripts)
+pools, err := testdbpool.ListPools(ctx, connPool, "myapp-test-")
+
+// Clean up a specific pool and all its resources
+err := testdbpool.CleanupPool(ctx, connPool, "myapp-test-old-hash")
 ```
 
 ### TestDB Interface
