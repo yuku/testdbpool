@@ -118,7 +118,7 @@ func checkIfExists(ctx context.Context, tx pgx.Tx, name string) (bool, error) {
 func (t *TemplateDB) createDatabase(ctx context.Context, name string) error {
 	// CREATE DATABASE cannot run inside a transaction block
 	_, err := t.cfg.ConnPool.
-		Exec(ctx, fmt.Sprintf(`CREATE DATABASE %s`, name))
+		Exec(ctx, fmt.Sprintf(`CREATE DATABASE %s IS_TEMPLATE true`, name))
 	if err != nil {
 		return fmt.Errorf("failed to create template database: %w", err)
 	}
@@ -208,7 +208,16 @@ func (t *TemplateDB) Cleanup(ctx context.Context) error {
 		return nil // Template database not set up, nothing to clean up
 	}
 
+	// To drop the template database, we need to first alter it to not be a template
+	// and then drop it.
 	_, err := t.cfg.ConnPool.Exec(ctx, fmt.Sprintf(
+		`ALTER DATABASE %s IS_TEMPLATE false`, t.SanitizedName(),
+	))
+	if err != nil {
+		return fmt.Errorf("failed to alter template database: %w", err)
+	}
+
+	_, err = t.cfg.ConnPool.Exec(ctx, fmt.Sprintf(
 		`DROP DATABASE IF EXISTS %s`, t.SanitizedName(),
 	))
 	if err != nil {
