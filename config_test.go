@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuku/numpool"
+	"github.com/yuku/testdbpool/internal/pgconst"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -134,6 +135,76 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "pool is required", // First validation error
 		},
+		{
+			name: "valid DatabaseOwner",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "my_owner",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty DatabaseOwner (valid)",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid DatabaseOwner - starts with number",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "2invalid",
+			},
+			wantErr: true,
+			errMsg:  "invalid DatabaseOwner: 2invalid",
+		},
+		{
+			name: "invalid DatabaseOwner - contains spaces",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "invalid owner",
+			},
+			wantErr: true,
+			errMsg:  "invalid DatabaseOwner: invalid owner",
+		},
+		{
+			name: "invalid DatabaseOwner - contains special chars",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "invalid-owner",
+			},
+			wantErr: true,
+			errMsg:  "invalid DatabaseOwner: invalid-owner",
+		},
+		{
+			name: "invalid DatabaseOwner - too long",
+			config: Config{
+				ID:            "test-pool",
+				Pool:          &pgxpool.Pool{},
+				MaxDatabases:  5,
+				SetupTemplate: validSetupTemplate,
+				DatabaseOwner: "this_is_a_very_long_identifier_name_that_exceeds_the_maximum_length",
+			},
+			wantErr: true,
+			errMsg:  "invalid DatabaseOwner: this_is_a_very_long_identifier_name_that_exceeds_the_maximum_length",
+		},
 	}
 
 	for _, tt := range tests {
@@ -216,6 +287,38 @@ func TestConfig_Validate_EdgeCases(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+// TestIsValidPostgreSQLIdentifier tests the PostgreSQL identifier validation function
+func TestIsValidPostgreSQLIdentifier(t *testing.T) {
+	tests := []struct {
+		name       string
+		identifier string
+		want       bool
+	}{
+		{"valid simple identifier", "myowner", true},
+		{"valid identifier with underscore", "my_owner", true},
+		{"valid identifier starting with underscore", "_owner", true},
+		{"valid identifier with numbers", "owner123", true},
+		{"valid identifier with dollar sign", "owner$test", true},
+		{"valid identifier mixed case", "MyOwner", true},
+		{"empty string", "", false},
+		{"starts with number", "123owner", false},
+		{"contains space", "my owner", false},
+		{"contains hyphen", "my-owner", false},
+		{"contains special chars", "owner@test", false},
+		{"too long (64 chars)", "this_is_a_very_long_identifier_name_that_exceeds_the_maximum_length", false},
+		{"exactly 63 chars (valid)", "this_is_exactly_sixty_three_characters_long_identifier_name_abc", true},
+		{"single character", "a", true},
+		{"single underscore", "_", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pgconst.IsValidPostgreSQLIdentifier(tt.identifier)
+			assert.Equal(t, tt.want, got, "pgconst.IsValidPostgreSQLIdentifier(%q) = %v, want %v", tt.identifier, got, tt.want)
 		})
 	}
 }

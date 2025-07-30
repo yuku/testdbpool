@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
+	"github.com/yuku/testdbpool/internal/pgconst"
 	"github.com/yuku/testdbpool/internal/templatedb"
 )
 
@@ -46,6 +47,24 @@ type Config struct {
 	// SetupTemplate is called once to set up the template database.
 	// The template database is used as a source for creating test databases.
 	SetupTemplate func(context.Context, *pgx.Conn) error
+
+	// DatabaseOwner specifies the owner for template and test databases.
+	// If empty, uses the default owner (connection user).
+	//
+	// IMPORTANT: When specifying a DatabaseOwner different from the connection user,
+	// the connection user must have sufficient privileges:
+	//   1. Be a member of the DatabaseOwner role: GRANT database_owner TO connection_user
+	//   2. Have superuser privileges: ALTER USER connection_user SUPERUSER
+	//   3. Have CREATEDB privilege at minimum: ALTER USER connection_user CREATEDB
+	//
+	// For development/testing, using a superuser is often simplest.
+	// For production, follow the principle of least privilege.
+	//
+	// Example scenarios:
+	//   - Same user: DatabaseOwner = connection user (always works)
+	//   - Different user: Requires proper role membership or superuser privileges
+	//   - Empty string: Uses connection user as owner (recommended for simplicity)
+	DatabaseOwner string
 }
 
 // Validate checks if the configuration is valid.
@@ -70,6 +89,12 @@ func (c *Config) Validate() error {
 
 	if c.SetupTemplate == nil {
 		return fmt.Errorf("SetupTemplate function is required")
+	}
+
+	if c.DatabaseOwner != "" {
+		if !pgconst.IsValidPostgreSQLIdentifier(c.DatabaseOwner) {
+			return fmt.Errorf("invalid DatabaseOwner: %s", c.DatabaseOwner)
+		}
 	}
 
 	return nil
@@ -101,9 +126,10 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 	}
 
 	templateDB, err := templatedb.New(&templatedb.Config{
-		PoolID:   cfg.ID,
-		ConnPool: cfg.Pool,
-		Setup:    cfg.SetupTemplate,
+		PoolID:        cfg.ID,
+		ConnPool:      cfg.Pool,
+		Setup:         cfg.SetupTemplate,
+		DatabaseOwner: cfg.DatabaseOwner,
 	})
 	if err != nil {
 		manager.Close() // Closing manager also closes the numpool
