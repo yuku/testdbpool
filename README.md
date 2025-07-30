@@ -5,46 +5,6 @@
 
 A Go library for managing a pool of test databases in PostgreSQL. Built on top of [numpool](https://github.com/yuku/numpool), testdbpool provides efficient test database management with automatic cleanup and concurrent access support.
 
-## Database Reset Strategy
-
-**testdbpool uses the DROP DATABASE strategy exclusively** for database cleanup between test runs. This design decision was made after comprehensive benchmarking and analysis of different approaches:
-
-### Strategy Comparison
-
-We evaluated two primary strategies for resetting test databases:
-
-| Metric | TRUNCATE Strategy | DROP DATABASE Strategy | Winner |
-|--------|------------------|----------------------|---------|
-| **Simple Operations** | ~25ms per cycle | ~121ms per cycle (4.8x slower) | TRUNCATE |
-| **Data Operations** | ~30ms per operation | ~97ms per operation (3.2x slower) | TRUNCATE |
-| **Large Schema (10+ tables)** | ~527ms per operation | ~214ms per operation (2.5x faster) | **DROP** |
-| **Concurrency Support** | ❌ Resource contention issues | ✅ Excellent concurrent support | **DROP** |
-| **Data Isolation** | ⚠️ Schema changes persist | ✅ Complete isolation | **DROP** |
-| **Implementation Complexity** | High (dual strategies) | Low (single strategy) | **DROP** |
-
-### Why DROP DATABASE Strategy?
-
-1. **Reliability**: No resource contention issues when `MaxDatabases` < concurrent goroutines
-2. **Complete Isolation**: Each test gets a completely fresh database
-3. **Better Performance with Complex Schemas**: More efficient when dealing with many tables/indexes
-4. **Simplified Maintenance**: Single strategy reduces codebase complexity
-5. **Future-Proof**: Scales better as application schemas grow in complexity
-
-### Performance Benchmarks
-
-```bash
-# Run benchmarks to see current performance characteristics
-go test -bench=. -benchtime=2s
-
-# Results on test hardware:
-BenchmarkAcquireReleaseCycle-10         20    121ms per operation
-BenchmarkWithDataOperations-10          15     97ms per operation  
-BenchmarkConcurrentUsage-10             25     89ms per operation
-BenchmarkLargeSchema-10                  5    214ms per operation
-```
-
-While DROP DATABASE is slower for simple schemas, the reliability and concurrent support benefits outweigh the performance cost in most real-world testing scenarios.
-
 ## Features
 
 - **Efficient Database Pooling**: Reuse test databases across test runs to significantly speed up integration tests
@@ -558,6 +518,46 @@ Using testdbpool provides several key performance and efficiency improvements:
 - [pgx/v5](https://github.com/jackc/pgx) - PostgreSQL driver and connection pooling
 - [numpool](https://github.com/yuku/numpool) - Bitmap-based resource pool management
 - [testify](https://github.com/stretchr/testify) - Testing utilities (dev dependency)
+
+## Database Reset Strategy
+
+**testdbpool uses the DROP DATABASE strategy exclusively** for database cleanup between test runs. This design decision was made after comprehensive benchmarking and analysis of different approaches:
+
+### Strategy Comparison
+
+We evaluated two primary strategies for resetting test databases:
+
+| Metric | TRUNCATE Strategy | DROP DATABASE Strategy | Winner |
+|--------|------------------|----------------------|---------|
+| **Simple Operations** | ~25ms per cycle | ~121ms per cycle (4.8x slower) | TRUNCATE |
+| **Data Operations** | ~30ms per operation | ~97ms per operation (3.2x slower) | TRUNCATE |
+| **Large Schema (10+ tables)** | ~527ms per operation | ~214ms per operation (2.5x faster) | **DROP** |
+| **Concurrency Support** | ❌ Resource contention issues | ✅ Excellent concurrent support | **DROP** |
+| **Data Isolation** | ⚠️ Schema changes persist | ✅ Complete isolation | **DROP** |
+| **Implementation Complexity** | High (dual strategies) | Low (single strategy) | **DROP** |
+
+### Why DROP DATABASE Strategy?
+
+1. **Reliability**: No resource contention issues when `MaxDatabases` < concurrent goroutines
+2. **Complete Isolation**: Each test gets a completely fresh database
+3. **Better Performance with Complex Schemas**: More efficient when dealing with many tables/indexes
+4. **Simplified Maintenance**: Single strategy reduces codebase complexity
+5. **Future-Proof**: Scales better as application schemas grow in complexity
+
+### Performance Benchmarks
+
+```bash
+# Run benchmarks to see current performance characteristics
+go test -bench=. -benchtime=2s
+
+# Results on test hardware:
+BenchmarkAcquireReleaseCycle-10         20    121ms per operation
+BenchmarkWithDataOperations-10          15     97ms per operation  
+BenchmarkConcurrentUsage-10             25     89ms per operation
+BenchmarkLargeSchema-10                  5    214ms per operation
+```
+
+While DROP DATABASE is slower for simple schemas, the reliability and concurrent support benefits outweigh the performance cost in most real-world testing scenarios.
 
 ## License
 
