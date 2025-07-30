@@ -3,20 +3,14 @@ package testdbpool
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"runtime"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuku/numpool"
+	"github.com/yuku/testdbpool/internal/pgconst"
 	"github.com/yuku/testdbpool/internal/templatedb"
-)
-
-var (
-	// PostgreSQL identifier regex pattern: starts with letter/underscore,
-	// followed by letters/digits/underscores/dollar signs, max 63 characters
-	postgresIdentifierRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_$]*$`)
 )
 
 type Pool struct {
@@ -84,22 +78,12 @@ func (c *Config) Validate() error {
 	}
 
 	if c.DatabaseOwner != "" {
-		if !isValidPostgreSQLIdentifier(c.DatabaseOwner) {
+		if !pgconst.IsValidPostgreSQLIdentifier(c.DatabaseOwner) {
 			return fmt.Errorf("invalid DatabaseOwner: %s", c.DatabaseOwner)
 		}
 	}
 
 	return nil
-}
-
-// isValidPostgreSQLIdentifier checks if the given string is a valid PostgreSQL identifier.
-// PostgreSQL identifiers must start with a letter or underscore, followed by letters,
-// digits, underscores, or dollar signs, and must not exceed 63 characters.
-func isValidPostgreSQLIdentifier(identifier string) bool {
-	if len(identifier) == 0 || len(identifier) > 63 {
-		return false
-	}
-	return postgresIdentifierRegex.MatchString(identifier)
 }
 
 // New creates a new TestDBPool instance with the provided configuration.

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuku/numpool"
+	"github.com/yuku/testdbpool/internal/pgconst"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -316,8 +317,8 @@ func TestIsValidPostgreSQLIdentifier(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isValidPostgreSQLIdentifier(tt.identifier)
-			assert.Equal(t, tt.want, got, "isValidPostgreSQLIdentifier(%q) = %v, want %v", tt.identifier, got, tt.want)
+			got := pgconst.IsValidPostgreSQLIdentifier(tt.identifier)
+			assert.Equal(t, tt.want, got, "pgconst.IsValidPostgreSQLIdentifier(%q) = %v, want %v", tt.identifier, got, tt.want)
 		})
 	}
 }
