@@ -21,6 +21,7 @@ package testdbpool_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -40,8 +41,7 @@ func BenchmarkAcquireReleaseCycle(b *testing.B) {
 	pool := createBenchmarkPool(b, ctx, connPool, "basic_benchmark")
 	defer pool.Cleanup()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
@@ -63,8 +63,7 @@ func BenchmarkWithDataOperations(b *testing.B) {
 	pool := createBenchmarkPool(b, ctx, connPool, "data_benchmark")
 	defer pool.Cleanup()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
@@ -134,9 +133,9 @@ func BenchmarkLargeSchema(b *testing.B) {
 
 	createLargeSchemaSetup := func(ctx context.Context, conn *pgx.Conn) error {
 		// Create multiple tables with indexes and constraints
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			_, err := conn.Exec(ctx, `
-				CREATE TABLE bench_table_`+string(rune('0'+i))+` (
+				CREATE TABLE `+fmt.Sprintf("bench_table_%d", i)+` (
 					id SERIAL PRIMARY KEY,
 					name TEXT NOT NULL,
 					value INTEGER DEFAULT 0,
@@ -148,7 +147,7 @@ func BenchmarkLargeSchema(b *testing.B) {
 			}
 
 			// Add indexes
-			_, err = conn.Exec(ctx, `CREATE INDEX idx_bench_table_`+string(rune('0'+i))+`_name ON bench_table_`+string(rune('0'+i))+` (name)`)
+			_, err = conn.Exec(ctx, `CREATE INDEX idx_`+fmt.Sprintf("bench_table_%d", i)+`_name ON `+fmt.Sprintf("bench_table_%d", i)+` (name)`)
 			if err != nil {
 				return err
 			}
@@ -167,16 +166,15 @@ func BenchmarkLargeSchema(b *testing.B) {
 	}
 	defer pool.Cleanup()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; b.Loop(); i++ {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
 
 		// Insert into a few tables
-		for j := 0; j < 3; j++ {
-			_, err = db.Pool().Exec(ctx, `INSERT INTO bench_table_`+string(rune('0'+j))+` (name, value) VALUES ($1, $2)`, "test", i)
+		for j := range 3 {
+			_, err = db.Pool().Exec(ctx, fmt.Sprintf("INSERT INTO bench_table_%d (name, value) VALUES ($1, $2)", j), "test", i)
 			if err != nil {
 				b.Fatal(err)
 			}

@@ -35,15 +35,15 @@ func (db *TestDB) Release(ctx context.Context) error {
 	}
 
 	// 2. Drop the database to ensure complete cleanup
+	var err error
 	if db.rootPool != nil {
 		dbName := db.Name()
-		_, err := db.rootPool.Exec(ctx, fmt.Sprintf(
+		_, e := db.rootPool.Exec(ctx, fmt.Sprintf(
 			"DROP DATABASE IF EXISTS %s",
 			pgx.Identifier{dbName}.Sanitize(),
 		))
-		if err != nil {
-			// Log error but don't fail the release - we still want to release the resource
-			fmt.Printf("Warning: failed to drop database %s: %v\n", dbName, err)
+		if e != nil {
+			err = fmt.Errorf("failed to drop database %s: %w", dbName, e)
 		}
 	}
 
@@ -53,7 +53,10 @@ func (db *TestDB) Release(ctx context.Context) error {
 	}
 
 	// Release the resource back to the numpool
-	return db.resource.Release(ctx)
+	if err := db.resource.Release(ctx); err != nil {
+		return fmt.Errorf("failed to release resource: %w", err)
+	}
+	return err
 }
 
 // Pool returns the pgxpool.Pool connected to the postgres database that db represents.
