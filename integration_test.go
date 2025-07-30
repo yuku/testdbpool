@@ -408,3 +408,150 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, int32(n), count, "expected all goroutines to complete")
 }
+
+// TestIntegration_DatabaseOwner is an integration test that tests the DatabaseOwner functionality.
+func TestIntegration_DatabaseOwner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	ctx := context.Background()
+	connPool := testutil.GetTestDBPool(t)
+	t.Cleanup(testutil.CleanupNumpool(connPool))
+
+	t.Run("with valid database owner", func(t *testing.T) {
+		// First, create a test user that will own the databases
+		testOwner := "testowner"
+		_, err := connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		require.NoError(t, err)
+
+		_, err = connPool.Exec(ctx, `CREATE USER `+testOwner+` WITH LOGIN`)
+		require.NoError(t, err)
+
+		t.Cleanup(func() {
+			// Clean up the test user after the test
+			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		})
+
+		// Create a testdbpool instance with DatabaseOwner
+		pool, err := testdbpool.New(ctx, &testdbpool.Config{
+			ID:            "integration_database_owner",
+			Pool:          connPool,
+			MaxDatabases:  1,
+			DatabaseOwner: testOwner,
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+				return err
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, pool)
+		t.Cleanup(pool.Cleanup)
+
+		// Acquire a database
+		db, err := pool.Acquire(ctx)
+		require.NoError(t, err)
+
+		// Verify the database owner by checking pg_database
+		var owner string
+		err = connPool.QueryRow(ctx,
+			`SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1`,
+			db.Name()).Scan(&owner)
+		require.NoError(t, err)
+		assert.Equal(t, testOwner, owner, "database should be owned by the specified owner")
+
+		// Verify the template database owner as well
+		var templateOwner string
+		err = connPool.QueryRow(ctx,
+			`SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1`,
+			pool.TemplateDBName()).Scan(&templateOwner)
+		require.NoError(t, err)
+		assert.Equal(t, testOwner, templateOwner, "template database should be owned by the specified owner")
+
+		// Verify that the database functions normally
+		_, err = db.Pool().Exec(ctx, `INSERT INTO test_table (data) VALUES ($1)`, "test data")
+		require.NoError(t, err)
+
+		var count int
+		err = db.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM test_table`).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "should be able to insert and query data")
+
+		require.NoError(t, db.Release(ctx))
+	})
+
+	t.Run("without database owner (default behavior)", func(t *testing.T) {
+		// Create a testdbpool instance without DatabaseOwner (empty string)
+		pool, err := testdbpool.New(ctx, &testdbpool.Config{
+			ID:            "integration_no_database_owner",
+			Pool:          connPool,
+			MaxDatabases:  1,
+			DatabaseOwner: "", // Empty string should use default behavior
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+				return err
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, pool)
+		t.Cleanup(pool.Cleanup)
+
+		// Acquire a database
+		db, err := pool.Acquire(ctx)
+		require.NoError(t, err)
+
+		// Verify that the database functions normally with default owner
+		_, err = db.Pool().Exec(ctx, `INSERT INTO test_table (data) VALUES ($1)`, "test data")
+		require.NoError(t, err)
+
+		var count int
+		err = db.Pool().QueryRow(ctx, `SELECT COUNT(*) FROM test_table`).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "should be able to insert and query data with default owner")
+
+		require.NoError(t, db.Release(ctx))
+	})
+
+	t.Run("with underscore in database owner name", func(t *testing.T) {
+		// Test with a valid PostgreSQL identifier that contains underscores
+		testOwner := "test_owner_123"
+		_, err := connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		require.NoError(t, err)
+
+		_, err = connPool.Exec(ctx, `CREATE USER `+testOwner+` WITH LOGIN`)
+		require.NoError(t, err)
+
+		t.Cleanup(func() {
+			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		})
+
+		// Create a testdbpool instance with underscore in DatabaseOwner
+		pool, err := testdbpool.New(ctx, &testdbpool.Config{
+			ID:            "integration_database_owner_underscore",
+			Pool:          connPool,
+			MaxDatabases:  1,
+			DatabaseOwner: testOwner,
+			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+				return err
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, pool)
+		t.Cleanup(pool.Cleanup)
+
+		// Acquire a database
+		db, err := pool.Acquire(ctx)
+		require.NoError(t, err)
+
+		// Verify the database owner
+		var owner string
+		err = connPool.QueryRow(ctx,
+			`SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = $1`,
+			db.Name()).Scan(&owner)
+		require.NoError(t, err)
+		assert.Equal(t, testOwner, owner, "database should be owned by the specified owner with underscores")
+
+		require.NoError(t, db.Release(ctx))
+	})
+}

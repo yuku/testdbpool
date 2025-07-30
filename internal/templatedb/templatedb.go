@@ -40,6 +40,10 @@ type Config struct {
 
 	// Setup is the function that sets up the template database.
 	Setup func(context.Context, *pgx.Conn) error
+
+	// DatabaseOwner specifies the owner for the template and test databases.
+	// If empty, uses the default owner (connection user).
+	DatabaseOwner string
 }
 
 // New creates a new TemplateDB instance with the given configuration.
@@ -117,8 +121,15 @@ func checkIfExists(ctx context.Context, tx pgx.Tx, name string) (bool, error) {
 
 func (t *TemplateDB) createDatabase(ctx context.Context) error {
 	// CREATE DATABASE cannot run inside a transaction block
-	_, err := t.cfg.ConnPool.
-		Exec(ctx, fmt.Sprintf(`CREATE DATABASE %s IS_TEMPLATE true`, t.SanitizedName()))
+	var query string
+	if t.cfg.DatabaseOwner != "" {
+		query = fmt.Sprintf(`CREATE DATABASE %s OWNER %s IS_TEMPLATE true`,
+			t.SanitizedName(), pgx.Identifier{t.cfg.DatabaseOwner}.Sanitize())
+	} else {
+		query = fmt.Sprintf(`CREATE DATABASE %s IS_TEMPLATE true`, t.SanitizedName())
+	}
+
+	_, err := t.cfg.ConnPool.Exec(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to create template database: %w", err)
 	}
@@ -189,12 +200,24 @@ func (t *TemplateDB) Create(ctx context.Context, name string) (*pgxpool.Pool, er
 }
 
 func (t *TemplateDB) createFromTemplate(ctx context.Context, name string) error {
-	_, err := t.cfg.ConnPool.Exec(ctx, fmt.Sprintf(
-		`CREATE DATABASE %s WITH TEMPLATE %s`,
-		pgx.Identifier{name}.Sanitize(), t.SanitizedName(),
-	))
+	var query string
+	if t.cfg.DatabaseOwner != "" {
+		query = fmt.Sprintf(
+			`CREATE DATABASE %s OWNER %s TEMPLATE %s`,
+			pgx.Identifier{name}.Sanitize(),
+			pgx.Identifier{t.cfg.DatabaseOwner}.Sanitize(),
+			t.SanitizedName(),
+		)
+	} else {
+		query = fmt.Sprintf(
+			`CREATE DATABASE %s TEMPLATE %s`,
+			pgx.Identifier{name}.Sanitize(), t.SanitizedName(),
+		)
+	}
+
+	_, err := t.cfg.ConnPool.Exec(ctx, query)
 	if err != nil {
-		return fmt.Errorf("failed to create template database: %w", err)
+		return fmt.Errorf("failed to create database from template: %w", err)
 	}
 	return nil
 }
