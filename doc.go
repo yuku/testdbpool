@@ -77,7 +77,7 @@
 //
 //   - Fast database creation through template cloning instead of schema migration
 //   - Complete isolation using DROP DATABASE strategy for reliable test separation
-//   - Excellent concurrent test support without resource contention
+//   - Excellent concurrent test support with minimal resource contention
 //   - Optimal resource utilization in CI and resource-constrained environments
 //   - Superior performance with complex schemas (10+ tables)
 //   - Simplified maintenance with single cleanup strategy
