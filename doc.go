@@ -1,16 +1,17 @@
 // Package testdbpool provides efficient test database pooling for PostgreSQL integration tests.
 //
 // testdbpool manages a pool of test databases that can be shared across multiple test functions,
-// significantly improving test performance by reusing databases instead of creating and destroying
-// them for each test. Built on top of numpool for resource management, it uses PostgreSQL's
-// template database feature for fast database creation and maintains connection pools for efficiency.
+// significantly improving test performance by reusing template-based database creation instead of
+// running schema migrations for each test. Built on top of numpool for resource management, it uses
+// PostgreSQL's template database feature for fast database creation and the DROP DATABASE strategy
+// for complete isolation between test runs.
 //
 // # Key Features
 //
 //   - Template-based database creation using PostgreSQL's CREATE DATABASE ... TEMPLATE
-//   - Connection pool reuse to eliminate connection establishment overhead
-//   - Concurrent test support with fair resource allocation
-//   - Automatic database reset between test uses
+//   - DROP DATABASE strategy for complete isolation between test runs
+//   - Concurrent test support with efficient resource allocation
+//   - Automatic database cleanup between test uses
 //   - Resource-efficient operation ideal for CI environments
 //   - Cross-package pool sharing using common identifiers
 //
@@ -34,10 +35,6 @@
 //			Pool:         connPool,
 //			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 //				_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-//				return err
-//			},
-//			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-//				_, err := pool.Exec(ctx, `TRUNCATE TABLE users RESTART IDENTITY`)
 //				return err
 //			},
 //		}
@@ -65,7 +62,7 @@
 //		if err != nil {
 //			t.Fatal(err)
 //		}
-//		defer db.Release(ctx) // Reset and return to pool
+//		defer db.Release(ctx) // Drop database and return resource to pool
 //
 //		// Use the database
 //		_, err = db.Pool().Exec(ctx, "INSERT INTO users (name) VALUES ($1)", "Alice")
@@ -79,10 +76,11 @@
 // testdbpool provides significant performance improvements over traditional approaches:
 //
 //   - Fast database creation through template cloning instead of schema migration
-//   - Efficient cleanup using TRUNCATE instead of database recreation
-//   - Connection pool reuse eliminates connection establishment overhead
+//   - Complete isolation using DROP DATABASE strategy for reliable test separation
+//   - Excellent concurrent test support with minimal resource contention
 //   - Optimal resource utilization in CI and resource-constrained environments
-//   - Reduced load on PostgreSQL server through controlled database pooling
+//   - Superior performance with complex schemas (10+ tables)
+//   - Simplified maintenance with single cleanup strategy
 //
 // # Resource Management
 //
