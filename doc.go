@@ -10,7 +10,7 @@
 //
 //   - Template-based database creation using PostgreSQL's CREATE DATABASE ... TEMPLATE
 //   - DROP DATABASE strategy for complete isolation between test runs
-//   - Concurrent test support with excellent resource allocation
+//   - Concurrent test support with efficient resource allocation
 //   - Automatic database cleanup between test uses
 //   - Resource-efficient operation ideal for CI environments
 //   - Cross-package pool sharing using common identifiers
