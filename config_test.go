@@ -16,9 +16,6 @@ func TestConfig_Validate(t *testing.T) {
 	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
 		return nil
 	}
-	validResetDatabase := func(ctx context.Context, pool *pgxpool.Pool) error {
-		return nil
-	}
 
 	tests := []struct {
 		name      string
@@ -34,7 +31,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{}, // Mock pool for testing
 				MaxDatabases:  5,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: false,
 		},
@@ -45,7 +41,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: true,
 			errMsg:  "ID is required",
@@ -57,7 +52,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          nil,
 				MaxDatabases:  5,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: true,
 			errMsg:  "pool is required",
@@ -69,7 +63,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  0, // Should be set to default
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, c *Config) {
@@ -84,7 +77,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  -1,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: true,
 			errMsg:  "MaxDatabases must be between 1 and 64, got -1",
@@ -96,7 +88,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  numpool.MaxResourcesLimit + 1,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: true,
 			errMsg:  "MaxDatabases must be between 1 and 64, got 65",
@@ -108,7 +99,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  numpool.MaxResourcesLimit,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: false,
 		},
@@ -119,7 +109,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  1,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: false,
 		},
@@ -130,22 +119,9 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
 				SetupTemplate: nil,
-				ResetDatabase: validResetDatabase,
 			},
 			wantErr: true,
 			errMsg:  "SetupTemplate function is required",
-		},
-		{
-			name: "nil ResetDatabase",
-			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
-				ResetDatabase: nil,
-			},
-			wantErr: true,
-			errMsg:  "ResetDatabase function is required",
 		},
 		{
 			name: "all fields nil except ID",
@@ -154,7 +130,6 @@ func TestConfig_Validate(t *testing.T) {
 				Pool:          nil,
 				MaxDatabases:  0,
 				SetupTemplate: nil,
-				ResetDatabase: nil,
 			},
 			wantErr: true,
 			errMsg:  "pool is required", // First validation error
@@ -190,16 +165,12 @@ func TestConfig_Validate_DefaultMaxDatabases(t *testing.T) {
 	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
 		return nil
 	}
-	validResetDatabase := func(ctx context.Context, pool *pgxpool.Pool) error {
-		return nil
-	}
 
 	config := Config{
 		ID:            "test-default",
 		Pool:          &pgxpool.Pool{},
 		MaxDatabases:  0, // Should trigger default calculation
 		SetupTemplate: validSetupTemplate,
-		ResetDatabase: validResetDatabase,
 	}
 
 	err := config.Validate()
@@ -215,9 +186,6 @@ func TestConfig_Validate_DefaultMaxDatabases(t *testing.T) {
 // TestConfig_Validate_EdgeCases tests edge cases for MaxDatabases validation
 func TestConfig_Validate_EdgeCases(t *testing.T) {
 	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
-		return nil
-	}
-	validResetDatabase := func(ctx context.Context, pool *pgxpool.Pool) error {
 		return nil
 	}
 
@@ -240,7 +208,6 @@ func TestConfig_Validate_EdgeCases(t *testing.T) {
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  tc.maxDatabases,
 				SetupTemplate: validSetupTemplate,
-				ResetDatabase: validResetDatabase,
 			}
 
 			err := config.Validate()

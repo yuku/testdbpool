@@ -14,7 +14,7 @@ func TestBasicAPIBehavior(t *testing.T) {
 		_, err := gitutil.GetFilesRevision([]string{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no file paths provided")
-		
+
 		// Function should not panic with any input
 		assert.NotPanics(t, func() {
 			_, _ = gitutil.GetFilesRevision([]string{"any-file.txt"})
@@ -26,7 +26,7 @@ func TestBasicAPIBehavior(t *testing.T) {
 		hasChanges, err := gitutil.HasUnstagedChanges([]string{})
 		assert.NoError(t, err)
 		assert.False(t, hasChanges)
-		
+
 		// Function should not panic with any input
 		assert.NotPanics(t, func() {
 			_, _ = gitutil.HasUnstagedChanges([]string{"any-file.txt"})
@@ -37,13 +37,13 @@ func TestBasicAPIBehavior(t *testing.T) {
 		// Should always return something, never empty
 		version1 := gitutil.GetSchemaVersion([]string{})
 		assert.NotEmpty(t, version1)
-		
+
 		version2 := gitutil.GetSchemaVersion([]string{"any-file.txt"})
 		assert.NotEmpty(t, version2)
-		
+
 		version3 := gitutil.GetSchemaVersion([]string{"file1.sql", "file2.sql"})
 		assert.NotEmpty(t, version3)
-		
+
 		// Function should not panic with any input
 		assert.NotPanics(t, func() {
 			_ = gitutil.GetSchemaVersion([]string{"any-file.txt"})
@@ -56,13 +56,13 @@ func TestRandomVersionGeneration(t *testing.T) {
 		// Test with non-existent files to trigger random generation
 		version1 := gitutil.GetSchemaVersion([]string{"non-existent-1.txt"})
 		version2 := gitutil.GetSchemaVersion([]string{"non-existent-2.txt"})
-		
+
 		// Random versions should be different (with very high probability)
 		assert.NotEqual(t, version1, version2, "random versions should be different")
 		assert.NotEmpty(t, version1)
 		assert.NotEmpty(t, version2)
 	})
-	
+
 	t.Run("random versions have reasonable format", func(t *testing.T) {
 		version := gitutil.GetSchemaVersion([]string{"non-existent.txt"})
 		assert.NotEmpty(t, version)
@@ -76,7 +76,7 @@ func TestEdgeCases(t *testing.T) {
 		for i := range longPath {
 			longPath[i] = 'a'
 		}
-		
+
 		version := gitutil.GetSchemaVersion([]string{string(longPath) + ".sql"})
 		assert.NotEmpty(t, version)
 	})
@@ -100,7 +100,7 @@ func TestEdgeCases(t *testing.T) {
 		// Empty slice
 		version := gitutil.GetSchemaVersion([]string{})
 		assert.NotEmpty(t, version)
-		
+
 		// Single empty string
 		version2 := gitutil.GetSchemaVersion([]string{""})
 		assert.NotEmpty(t, version2)

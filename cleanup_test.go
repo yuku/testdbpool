@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/yuku/testdbpool"
@@ -48,10 +47,6 @@ func TestListPools(t *testing.T) {
 					_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
 					return err
 				},
-				ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-					_, err := pool.Exec(ctx, `TRUNCATE TABLE test_table RESTART IDENTITY`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			createdPools = append(createdPools, pool)
@@ -82,10 +77,6 @@ func TestListPools(t *testing.T) {
 				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
 				return err
 			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE test_table RESTART IDENTITY`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		t.Cleanup(pool1.Cleanup)
@@ -96,10 +87,6 @@ func TestListPools(t *testing.T) {
 			MaxDatabases: 1,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE test_table RESTART IDENTITY`)
 				return err
 			},
 		})
@@ -140,10 +127,6 @@ func TestCleanupPool(t *testing.T) {
 			MaxDatabases: 2,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE test_table RESTART IDENTITY`)
 				return err
 			},
 		})
@@ -188,10 +171,6 @@ func TestCleanupPool(t *testing.T) {
 			MaxDatabases: 1,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE test_table RESTART IDENTITY`)
 				return err
 			},
 		})
@@ -246,10 +225,6 @@ func TestListAndCleanupIntegration(t *testing.T) {
 					_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
 					return err
 				},
-				ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-					_, err := pool.Exec(ctx, `TRUNCATE TABLE users RESTART IDENTITY`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			oldPools = append(oldPools, pool)
@@ -262,10 +237,6 @@ func TestListAndCleanupIntegration(t *testing.T) {
 			MaxDatabases: 1,
 			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
 				_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
-			ResetDatabase: func(ctx context.Context, pool *pgxpool.Pool) error {
-				_, err := pool.Exec(ctx, `TRUNCATE TABLE users RESTART IDENTITY`)
 				return err
 			},
 		})

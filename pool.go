@@ -29,12 +29,6 @@ type Pool struct {
 	// The length of this slice is equal to MaxDatabases and each index corresponds
 	// to a resource index in the numpool.
 	testDBs []*TestDB
-
-	// dbPools is a slice of pgxpool.Pool instances that are used for the test databases.
-	// The length of this slice is equal to MaxDatabases and each index corresponds
-	// to a resource index in the numpool.
-	// This is used to keep track of the pgxpool.Pool instances for each test database.
-	dbPools []*pgxpool.Pool
 }
 
 type Config struct {
@@ -52,10 +46,6 @@ type Config struct {
 	// SetupTemplate is called once to set up the template database.
 	// The template database is used as a source for creating test databases.
 	SetupTemplate func(context.Context, *pgx.Conn) error
-
-	// ResetDatabase is called before releasing a test database back to the pool.
-	// It should restore the database to a clean state for the next use.
-	ResetDatabase func(context.Context, *pgxpool.Pool) error
 }
 
 // Validate checks if the configuration is valid.
@@ -80,10 +70,6 @@ func (c *Config) Validate() error {
 
 	if c.SetupTemplate == nil {
 		return fmt.Errorf("SetupTemplate function is required")
-	}
-
-	if c.ResetDatabase == nil {
-		return fmt.Errorf("ResetDatabase function is required")
 	}
 
 	return nil
@@ -130,7 +116,6 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 		numPool:    numPool,
 		templateDB: templateDB,
 		testDBs:    make([]*TestDB, cfg.MaxDatabases),
-		dbPools:    make([]*pgxpool.Pool, cfg.MaxDatabases),
 	}, nil
 }
 
@@ -164,22 +149,21 @@ func (p *Pool) Acquire(ctx context.Context) (*TestDB, error) {
 		return nil, fmt.Errorf("test database at index %d is already acquired", dbIndex)
 	}
 
-	if p.dbPools[dbIndex] == nil {
-		pool, err := p.templateDB.Create(ctx, getTestDBName(p.cfg.ID, dbIndex))
-		if err != nil {
-			if err2 := resource.Release(ctx); err2 != nil {
-				return nil, fmt.Errorf("failed to release resource after error: %w", err2)
-			}
-			return nil, fmt.Errorf("failed to create test database: %w", err)
+	// Create database from template using DROP DATABASE strategy
+	dbName := getTestDBName(p.cfg.ID, dbIndex)
+	pool, err := p.templateDB.Create(ctx, dbName)
+	if err != nil {
+		if err2 := resource.Release(ctx); err2 != nil {
+			return nil, fmt.Errorf("failed to release resource after error: %w", err2)
 		}
-		p.dbPools[dbIndex] = pool
+		return nil, fmt.Errorf("failed to create test database: %w", err)
 	}
 
 	p.testDBs[dbIndex] = &TestDB{
 		poolID:   p.cfg.ID,
-		pool:     p.dbPools[dbIndex],
+		pool:     pool,
 		resource: resource,
-		reset:    p.cfg.ResetDatabase,
+		rootPool: p.cfg.Pool,
 		onRelease: func(index int) {
 			if index < len(p.testDBs) {
 				p.testDBs[index] = nil
@@ -200,11 +184,7 @@ func (p *Pool) Close(ctx context.Context) error {
 			}
 		}
 	}
-	for _, dbPool := range p.dbPools {
-		if dbPool != nil {
-			dbPool.Close()
-		}
-	}
+
 	p.manager.Close()
 	p.testDBs = nil
 	return nil
