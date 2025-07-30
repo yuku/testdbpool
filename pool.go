@@ -50,6 +50,20 @@ type Config struct {
 
 	// DatabaseOwner specifies the owner for template and test databases.
 	// If empty, uses the default owner (connection user).
+	//
+	// IMPORTANT: When specifying a DatabaseOwner different from the connection user,
+	// the connection user must have sufficient privileges:
+	//   1. Be a member of the DatabaseOwner role: GRANT database_owner TO connection_user
+	//   2. Have superuser privileges: ALTER USER connection_user SUPERUSER
+	//   3. Have CREATEDB privilege at minimum: ALTER USER connection_user CREATEDB
+	//
+	// For development/testing, using a superuser is often simplest.
+	// For production, follow the principle of least privilege.
+	//
+	// Example scenarios:
+	//   - Same user: DatabaseOwner = connection user (always works)
+	//   - Different user: Requires proper role membership or superuser privileges
+	//   - Empty string: Uses connection user as owner (recommended for simplicity)
 	DatabaseOwner string
 }
 

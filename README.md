@@ -358,6 +358,7 @@ type Config struct {
     Pool          *pgxpool.Pool                                    // Required: PostgreSQL connection pool to postgres database
     MaxDatabases  int                                              // Optional: Max databases (default: min(GOMAXPROCS, 64))
     SetupTemplate func(ctx context.Context, conn *pgx.Conn) error  // Required: Initialize template database
+    DatabaseOwner string                                           // Optional: Database owner (default: connection user)
 }
 ```
 
@@ -484,8 +485,99 @@ The library validates configuration at startup:
 - **Pool**: Must be a valid connection pool to a PostgreSQL server
 - **MaxDatabases**: Must be between 1 and 64 (defaults to `min(GOMAXPROCS, 64)`)
 - **SetupTemplate**: Required function to initialize the template database
+- **DatabaseOwner**: Optional; must be a valid PostgreSQL identifier if specified
 
 See [config_test.go](config_test.go) for comprehensive validation examples.
+
+## Database Owner Configuration
+
+The `DatabaseOwner` field allows you to specify a different owner for the template and test databases. This is useful for advanced permission scenarios where databases need to be owned by a specific role.
+
+### Basic Usage
+
+```go
+config := &testdbpool.Config{
+    ID:            "myapp-test",
+    Pool:          connPool,
+    DatabaseOwner: "app_user",  // Databases will be owned by 'app_user'
+    SetupTemplate: setupSchema,
+}
+```
+
+### Permission Requirements
+
+⚠️ **Important**: When specifying a `DatabaseOwner` different from the connection user, the connection user must have sufficient privileges:
+
+1. **Be a member of the DatabaseOwner role:**
+   ```sql
+   GRANT app_user TO connection_user;
+   ```
+2. **Have superuser privileges:**
+   ```sql
+   ALTER USER connection_user SUPERUSER;
+   ```
+3. **Have CREATEDB privilege at minimum:**
+   ```sql
+   ALTER USER connection_user CREATEDB;
+   ```
+
+### Recommended Setup Patterns
+
+#### Development/Testing (Simple)
+```sql
+-- Create a superuser for testing (simplest approach)
+CREATE USER test_admin SUPERUSER LOGIN PASSWORD 'password';
+```
+
+```go
+// Use superuser for connection
+connPool, _ := pgxpool.New(ctx, "postgres://test_admin:password@localhost/postgres")
+
+config := &testdbpool.Config{
+    Pool:          connPool,
+    DatabaseOwner: "app_user",  // Any valid user
+    // ... other config
+}
+```
+
+#### Production (Secure)
+```sql
+-- Create minimal privilege setup
+CREATE USER db_manager CREATEDB LOGIN PASSWORD 'secure_password';
+CREATE USER app_user LOGIN PASSWORD 'app_password';
+GRANT app_user TO db_manager;
+```
+
+```go
+// Use db_manager for connection
+connPool, _ := pgxpool.New(ctx, "postgres://db_manager:secure_password@localhost/postgres")
+
+config := &testdbpool.Config{
+    Pool:          connPool,
+    DatabaseOwner: "app_user",  // app_user will own databases
+    // ... other config
+}
+```
+
+#### Same User (Default Behavior)
+```go
+// Simplest case - connection user owns databases
+config := &testdbpool.Config{
+    Pool:          connPool,
+    DatabaseOwner: "",  // Empty = use connection user
+    // ... other config
+}
+```
+
+### Common Errors
+
+If you see permission errors like:
+
+- `ERROR: must be member of role "target_user"`
+- `ERROR: permission denied to create database`
+- `ERROR: must have CREATEDB privilege`
+
+Check that your connection user has the required privileges as outlined above.
 
 ## Best Practices
 
