@@ -1,11 +1,13 @@
 module github.com/yuku/testdbpool
 
-go 1.24
+go 1.23.0
+
+toolchain go1.24.5
 
 require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/stretchr/testify v1.10.0
-	github.com/yuku/numpool v0.4.4
+	github.com/yuku/numpool v0.4.5
 )
 
 require (

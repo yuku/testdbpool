@@ -41,7 +41,7 @@ func BenchmarkAcquireReleaseCycle(b *testing.B) {
 	pool := createBenchmarkPool(b, ctx, connPool, "basic_benchmark")
 	defer pool.Cleanup()
 
-	for b.Loop() {
+	for range b.N {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
@@ -63,7 +63,7 @@ func BenchmarkWithDataOperations(b *testing.B) {
 	pool := createBenchmarkPool(b, ctx, connPool, "data_benchmark")
 	defer pool.Cleanup()
 
-	for i := 0; b.Loop(); i++ {
+	for i := range b.N {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
@@ -166,7 +166,7 @@ func BenchmarkLargeSchema(b *testing.B) {
 	}
 	defer pool.Cleanup()
 
-	for i := 0; b.Loop(); i++ {
+	for i := range b.N {
 		db, err := pool.Acquire(ctx)
 		if err != nil {
 			b.Fatal(err)
