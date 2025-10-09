@@ -21,14 +21,15 @@ func TestPool_Cleanup(t *testing.T) {
 	t.Cleanup(testutil.CleanupNumpool(connPool))
 
 	t.Run("cleanup empty pool", func(t *testing.T) {
+		testutil.CreateTemplateDatabase(t, connPool, "test-cleanup-empty", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
+
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "test-cleanup-empty",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -37,14 +38,15 @@ func TestPool_Cleanup(t *testing.T) {
 	})
 
 	t.Run("cleanup pool with acquired databases", func(t *testing.T) {
+		testutil.CreateTemplateDatabase(t, connPool, "test-cleanup-with-dbs", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "test-cleanup-with-dbs",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -66,14 +68,15 @@ func TestPool_Cleanup(t *testing.T) {
 	})
 
 	t.Run("cleanup is idempotent", func(t *testing.T) {
+		testutil.CreateTemplateDatabase(t, connPool, "test-cleanup-idempotent", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
+
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "test-cleanup-idempotent",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -90,14 +93,15 @@ func TestPool_Cleanup(t *testing.T) {
 	})
 
 	t.Run("cleanup after manual close", func(t *testing.T) {
+		testutil.CreateTemplateDatabase(t, connPool, "test-cleanup-after-close", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
+
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "test-cleanup-after-close",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)

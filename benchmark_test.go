@@ -38,7 +38,9 @@ func BenchmarkAcquireReleaseCycle(b *testing.B) {
 	connPool := getBenchmarkDBPool(b)
 	defer cleanupBenchmarkNumpool(connPool)
 
-	pool := createBenchmarkPool(b, ctx, connPool, "basic_benchmark")
+	poolID := "basic_benchmark"
+	createBenchmarkTemplateDB(b, ctx, connPool, poolID)
+	pool := createBenchmarkPool(b, ctx, connPool, poolID)
 	defer pool.Cleanup()
 
 	for range b.N {
@@ -60,7 +62,9 @@ func BenchmarkWithDataOperations(b *testing.B) {
 	connPool := getBenchmarkDBPool(b)
 	defer cleanupBenchmarkNumpool(connPool)
 
-	pool := createBenchmarkPool(b, ctx, connPool, "data_benchmark")
+	poolID := "data_benchmark"
+	createBenchmarkTemplateDB(b, ctx, connPool, poolID)
+	pool := createBenchmarkPool(b, ctx, connPool, poolID)
 	defer pool.Cleanup()
 
 	for i := range b.N {
@@ -95,7 +99,9 @@ func BenchmarkConcurrentUsage(b *testing.B) {
 	connPool := getBenchmarkDBPool(b)
 	defer cleanupBenchmarkNumpool(connPool)
 
-	pool := createBenchmarkPool(b, ctx, connPool, "concurrent_benchmark")
+	poolID := "concurrent_benchmark"
+	createBenchmarkTemplateDB(b, ctx, connPool, poolID)
+	pool := createBenchmarkPool(b, ctx, connPool, poolID)
 	defer pool.Cleanup()
 
 	b.ResetTimer()
@@ -155,11 +161,13 @@ func BenchmarkLargeSchema(b *testing.B) {
 		return nil
 	}
 
+	poolID := "large_schema_benchmark"
+	createBenchmarkTemplateDatabaseCustom(b, ctx, connPool, poolID, createLargeSchemaSetup)
+
 	pool, err := testdbpool.New(ctx, &testdbpool.Config{
-		ID:            "large_schema_benchmark",
-		Pool:          connPool,
-		MaxDatabases:  4,
-		SetupTemplate: createLargeSchemaSetup,
+		ID:           poolID,
+		Pool:         connPool,
+		MaxDatabases: 4,
 	})
 	if err != nil {
 		b.Fatal(err)
@@ -187,16 +195,64 @@ func BenchmarkLargeSchema(b *testing.B) {
 	}
 }
 
+// createBenchmarkTemplateDB creates a template database for benchmarking
+func createBenchmarkTemplateDB(b *testing.B, ctx context.Context, connPool *pgxpool.Pool, poolID string) {
+	b.Helper()
+	createBenchmarkTemplateDatabaseCustom(b, ctx, connPool, poolID, func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, `CREATE TABLE bench_items (id SERIAL PRIMARY KEY, name TEXT, value INTEGER)`)
+		return err
+	})
+}
+
+// createBenchmarkTemplateDatabaseCustom creates a template database with custom setup for benchmarking
+func createBenchmarkTemplateDatabaseCustom(b *testing.B, ctx context.Context, connPool *pgxpool.Pool, poolID string, setup func(context.Context, *pgx.Conn) error) {
+	b.Helper()
+
+	templateName := fmt.Sprintf("testdbpooltmpl_%s", poolID)
+
+	// Drop template database if it exists (cleanup from previous test runs)
+	_, _ = connPool.Exec(ctx, fmt.Sprintf(
+		"ALTER DATABASE %s IS_TEMPLATE false",
+		pgx.Identifier{templateName}.Sanitize(),
+	))
+	_, _ = connPool.Exec(ctx, fmt.Sprintf(
+		"DROP DATABASE IF EXISTS %s",
+		pgx.Identifier{templateName}.Sanitize(),
+	))
+
+	// Create template database
+	_, err := connPool.Exec(ctx, fmt.Sprintf(
+		"CREATE DATABASE %s IS_TEMPLATE true",
+		pgx.Identifier{templateName}.Sanitize(),
+	))
+	if err != nil {
+		b.Fatalf("failed to create template database: %v", err)
+	}
+
+	// Connect to template database
+	cfg := connPool.Config().ConnConfig.Copy()
+	cfg.Database = templateName
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		b.Fatalf("failed to connect to template database: %v", err)
+	}
+	defer func() {
+		_ = conn.Close(ctx)
+	}()
+
+	// Run setup function
+	err = setup(ctx, conn)
+	if err != nil {
+		b.Fatalf("failed to setup template database: %v", err)
+	}
+}
+
 // createBenchmarkPool creates a test pool for benchmarking
 func createBenchmarkPool(b *testing.B, ctx context.Context, connPool *pgxpool.Pool, id string) *testdbpool.Pool {
 	pool, err := testdbpool.New(ctx, &testdbpool.Config{
 		ID:           id,
 		Pool:         connPool,
 		MaxDatabases: 8, // Sufficient databases for concurrent benchmarking
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `CREATE TABLE bench_items (id SERIAL PRIMARY KEY, name TEXT, value INTEGER)`)
-			return err
-		},
 	})
 	if err != nil {
 		b.Fatal(err)

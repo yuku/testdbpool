@@ -39,14 +39,15 @@ func TestListPools(t *testing.T) {
 
 		var createdPools []*testdbpool.Pool
 		for _, poolID := range poolIDs {
+			testutil.CreateTemplateDatabase(t, connPool, poolID, func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+				return err
+			})
+
 			pool, err := testdbpool.New(ctx, &testdbpool.Config{
 				ID:           poolID,
 				Pool:         connPool,
 				MaxDatabases: 1,
-				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			createdPools = append(createdPools, pool)
@@ -69,26 +70,26 @@ func TestListPools(t *testing.T) {
 
 	t.Run("prefix filtering works correctly", func(t *testing.T) {
 		// Create pools with different prefixes
+		testutil.CreateTemplateDatabase(t, connPool, "prefix1-hash", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
 		pool1, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "prefix1-hash",
 			Pool:         connPool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		t.Cleanup(pool1.Cleanup)
 
+		testutil.CreateTemplateDatabase(t, connPool, "prefix2-hash", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
 		pool2, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "prefix2-hash",
 			Pool:         connPool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		t.Cleanup(pool2.Cleanup)
@@ -120,15 +121,17 @@ func TestCleanupPool(t *testing.T) {
 	t.Run("cleanup existing pool succeeds", func(t *testing.T) {
 		poolID := "test-cleanup-pool"
 
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, poolID, func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		// Create a pool
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           poolID,
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 
@@ -164,15 +167,17 @@ func TestCleanupPool(t *testing.T) {
 	t.Run("cleanup pool with active connections", func(t *testing.T) {
 		poolID := "test-cleanup-active"
 
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, poolID, func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
+			return err
+		})
+
 		// Create a pool
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           poolID,
 			Pool:         connPool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 
@@ -217,28 +222,29 @@ func TestListAndCleanupIntegration(t *testing.T) {
 		// Create old pools
 		var oldPools []*testdbpool.Pool
 		for _, poolID := range oldPoolIDs {
+			testutil.CreateTemplateDatabase(t, connPool, poolID, func(ctx context.Context, conn *pgx.Conn) error {
+				_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+				return err
+			})
+
 			pool, err := testdbpool.New(ctx, &testdbpool.Config{
 				ID:           poolID,
 				Pool:         connPool,
 				MaxDatabases: 1,
-				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			oldPools = append(oldPools, pool)
 		}
 
 		// Create current pool
+		testutil.CreateTemplateDatabase(t, connPool, currentPoolID, func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
 		currentPool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           currentPoolID,
 			Pool:         connPool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 
