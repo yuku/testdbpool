@@ -17,8 +17,8 @@
 //
 // # Basic Usage
 //
-// The typical usage pattern involves setting up a shared pool in TestMain and using it
-// across multiple test functions:
+// The typical usage pattern involves creating a template database, setting up a shared pool
+// in TestMain, and using it across multiple test functions:
 //
 //	func TestMain(m *testing.M) {
 //		ctx := context.Background()
@@ -29,14 +29,35 @@
 //			panic(err)
 //		}
 //
+//		// Create template database
+//		templateName := "testdbpooltmpl_myapp-test"
+//		_, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
+//			pgx.Identifier{templateName}.Sanitize()))
+//		_, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
+//			pgx.Identifier{templateName}.Sanitize()))
+//		_, err = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
+//			pgx.Identifier{templateName}.Sanitize()))
+//		if err != nil {
+//			panic(err)
+//		}
+//
+//		// Connect to template and set up schema
+//		cfg := connPool.Config().ConnConfig.Copy()
+//		cfg.Database = templateName
+//		templateConn, err := pgx.ConnectConfig(ctx, cfg)
+//		if err != nil {
+//			panic(err)
+//		}
+//		_, err = templateConn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+//		templateConn.Close(ctx)
+//		if err != nil {
+//			panic(err)
+//		}
+//
 //		// Configure test database pool
 //		config := &testdbpool.Config{
-//			ID:           "myapp-test",
-//			Pool:         connPool,
-//			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-//				_, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-//				return err
-//			},
+//			ID:   "myapp-test",
+//			Pool: connPool,
 //		}
 //
 //		// Create the test pool

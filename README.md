@@ -9,11 +9,12 @@ A Go library for managing a pool of test databases in PostgreSQL. Built on top o
 
 - **Efficient Database Pooling**: Reuse test databases across test runs to significantly speed up integration tests
 - **Template-based Setup**: Create test databases from a template for fast initialization using PostgreSQL's template database feature
-- **Automatic Cleanup**: Databases are automatically reset between uses via customizable reset function
+- **Complete Data Isolation**: Databases are completely dropped and recreated between uses
 - **Concurrent Support**: Safe concurrent access with fair queuing through numpool's bitmap-based resource tracking
 - **Process Cleanup**: Automatic cleanup when processes terminate - no manual cleanup required
 - **Smart Defaults**: Automatically scales pool size based on available CPU cores
 - **Multi-instance Support**: Multiple test pools can share the same underlying resources using a common ID
+- **Simple API**: Explicit template creation provides clear control and eliminates complex synchronization
 
 ## Installation
 
@@ -45,49 +46,75 @@ var (
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
-    
+
     // Create a connection pool to the PostgreSQL server
     var err error
     connPool, err = pgxpool.New(ctx, "postgres://user:pass@localhost/postgres")
     if err != nil {
         panic(err)
     }
-    
+
+    // Create the template database
+    templateName := "testdbpooltmpl_myapp-test"
+
+    // Clean up any existing template from previous runs
+    _, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
+        pgx.Identifier{templateName}.Sanitize()))
+    _, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
+        pgx.Identifier{templateName}.Sanitize()))
+
+    // Create new template database
+    _, err = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
+        pgx.Identifier{templateName}.Sanitize()))
+    if err != nil {
+        panic(err)
+    }
+
+    // Connect to template database and set up schema
+    cfg := connPool.Config().ConnConfig.Copy()
+    cfg.Database = templateName
+    templateConn, err := pgx.ConnectConfig(ctx, cfg)
+    if err != nil {
+        panic(err)
+    }
+
+    // Set up your database schema in the template
+    _, err = templateConn.Exec(ctx, `
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE posts (
+            id SERIAL PRIMARY KEY,
+            user_id INT REFERENCES users(id),
+            title TEXT NOT NULL
+        );
+    `)
+    templateConn.Close(ctx)
+    if err != nil {
+        panic(err)
+    }
+
     // Configure the test database pool
     config := &testdbpool.Config{
         ID:           "myapp-test",
         Pool:         connPool,
         MaxDatabases: 0, // Defaults to min(GOMAXPROCS, 64)
-        SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-            // Set up your database schema in the template
-            _, err := conn.Exec(ctx, `
-                CREATE TABLE users (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT NOT NULL
-                );
-                CREATE TABLE posts (
-                    id SERIAL PRIMARY KEY,
-                    user_id INT REFERENCES users(id),
-                    title TEXT NOT NULL
-                );
-            `)
-            return err
-        },
     }
-    
+
     // Create the test database pool
     testPool, err = testdbpool.New(ctx, config)
     if err != nil {
         panic(err)
     }
-    
+
     // Run tests
     code := m.Run()
-    
+
     // Cleanup
     testPool.Cleanup()
     connPool.Close()
-    
+
     os.Exit(code)
 }
 
@@ -205,43 +232,45 @@ func TestConcurrentOperations(t *testing.T) {
 
 ### Sharing Pools Across Test Packages
 
-Different test packages can share the same pool by using the same ID:
+Different test packages can share the same pool by using the same ID. The template database must be created once before any tests run:
 
 ```go
 // package1/user_test.go
 func TestUserOperations(t *testing.T) {
+    // Template database "testdbpooltmpl_myapp-shared-pool" must already exist
     config := &testdbpool.Config{
-        ID:            "myapp-shared-pool", // Same ID across packages
-        Pool:          getDBPool(),
-        SetupTemplate: setupSchema,
+        ID:   "myapp-shared-pool", // Same ID across packages
+        Pool: getDBPool(),
     }
-    
+
     pool, _ := testdbpool.New(ctx, config)
     defer pool.Close(ctx) // Close this instance, but don't cleanup shared resources
-    
+
     db, _ := pool.Acquire(ctx)
     defer db.Release(ctx)
-    
+
     // Run user tests...
 }
 
-// package2/post_test.go  
+// package2/post_test.go
 func TestPostOperations(t *testing.T) {
+    // Uses the same template database "testdbpooltmpl_myapp-shared-pool"
     config := &testdbpool.Config{
-        ID:            "myapp-shared-pool", // Same ID - shares resources
-        Pool:          getDBPool(),
-        SetupTemplate: setupSchema,
+        ID:   "myapp-shared-pool", // Same ID - shares resources
+        Pool: getDBPool(),
     }
-    
+
     pool, _ := testdbpool.New(ctx, config)
     defer pool.Close(ctx) // Close this instance, but don't cleanup shared resources
-    
+
     db, _ := pool.Acquire(ctx)
     defer db.Release(ctx)
-    
+
     // Run post tests...
 }
 ```
+
+**Note**: When sharing pools across packages, create the template database in a shared setup script or in the first package's `TestMain`.
 
 ### Schema Version Management and Cleanup
 
@@ -255,29 +284,32 @@ package mytest
 import (
     "fmt"
     "log"
-    
+
     "github.com/yuku/testdbpool/gitutil"
 )
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
     connPool, _ := pgxpool.New(ctx, "postgres://localhost/postgres")
-    
+
     // Create pool ID with schema version
     schemaFiles := []string{"db/schema.sql", "db/migrations.sql"} // Your schema files
     schemaVersion := gitutil.GetSchemaVersion(schemaFiles)
     poolID := fmt.Sprintf("myapp-test-%s", schemaVersion)
-    
+
+    // Create template database with version-specific name
+    templateName := fmt.Sprintf("testdbpooltmpl_%s", poolID)
+    // ... create template database (see main usage example) ...
+
     config := &testdbpool.Config{
-        ID:            poolID, // e.g., "myapp-test-a1b2c3d4" or "myapp-test-f4e9a2b1" (random)
-        Pool:          connPool,
-        SetupTemplate: setupCurrentSchema,
+        ID:   poolID, // e.g., "myapp-test-a1b2c3d4" or "myapp-test-f4e9a2b1" (random)
+        Pool: connPool,
     }
-    
+
     testPool, _ := testdbpool.New(ctx, config)
-    
+
     code := m.Run()
-    
+
     testPool.Cleanup()
     connPool.Close()
     os.Exit(code)
@@ -354,13 +386,14 @@ See the [integration tests](integration_test.go) for comprehensive examples of:
 
 ```go
 type Config struct {
-    ID            string                                           // Required: Unique identifier for the pool
-    Pool          *pgxpool.Pool                                    // Required: PostgreSQL connection pool to postgres database
-    MaxDatabases  int                                              // Optional: Max databases (default: min(GOMAXPROCS, 64))
-    SetupTemplate func(ctx context.Context, conn *pgx.Conn) error  // Required: Initialize template database
-    DatabaseOwner string                                           // Optional: Database owner (default: connection user)
+    ID            string         // Required: Unique identifier for the pool
+    Pool          *pgxpool.Pool  // Required: PostgreSQL connection pool to postgres database
+    MaxDatabases  int            // Optional: Max databases (default: min(GOMAXPROCS, 64))
+    DatabaseOwner string         // Optional: Database owner (default: connection user)
 }
 ```
+
+**Template Database Requirement**: Before calling `testdbpool.New()`, you must create a template database named `testdbpooltmpl_{ID}` where `{ID}` is your pool ID. The template database must have `IS_TEMPLATE true` set.
 
 ### Pool Operations
 
@@ -425,6 +458,67 @@ Each acquired `TestDB` provides:
 - **Database Name**: Access to the unique database name for logging/debugging
 - **Connection Reuse**: Connection pools are kept alive when released and reused when the same resource is acquired again, reducing connection establishment overhead
 
+## Migration Guide (v0.1.x to v0.2.x)
+
+Version 0.2.0 simplifies the API by removing the `SetupTemplate` callback. Template databases must now be created explicitly before calling `testdbpool.New()`.
+
+### What Changed
+
+**Before (v0.1.x):**
+```go
+config := &testdbpool.Config{
+    ID:   "myapp-test",
+    Pool: connPool,
+    SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
+        _, err := conn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+        return err
+    },
+}
+pool, _ := testdbpool.New(ctx, config)
+```
+
+**After (v0.2.x):**
+```go
+// 1. Create template database
+templateName := "testdbpooltmpl_myapp-test"
+_, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
+    pgx.Identifier{templateName}.Sanitize()))
+_, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
+    pgx.Identifier{templateName}.Sanitize()))
+_, err := connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
+    pgx.Identifier{templateName}.Sanitize()))
+
+// 2. Connect to template and set up schema
+cfg := connPool.Config().ConnConfig.Copy()
+cfg.Database = templateName
+templateConn, _ := pgx.ConnectConfig(ctx, cfg)
+_, err = templateConn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+templateConn.Close(ctx)
+
+// 3. Create pool (no SetupTemplate)
+config := &testdbpool.Config{
+    ID:   "myapp-test",
+    Pool: connPool,
+}
+pool, _ := testdbpool.New(ctx, config)
+```
+
+### Why This Change?
+
+1. **Eliminates Deadlocks**: The old `SetupTemplate` callback used advisory locks for synchronization, which caused deadlocks when running `go test ./...` across multiple packages
+2. **Simpler Code**: Removes ~100 lines of complex synchronization logic
+3. **Clearer Separation**: Template creation is now explicitly under your control
+4. **Better for CI**: More predictable behavior in parallel test environments
+
+### Migration Steps
+
+1. **Extract SetupTemplate logic**: Move the code from your `SetupTemplate` function to a separate template creation function
+2. **Call before New()**: Create the template database before calling `testdbpool.New()`
+3. **Remove SetupTemplate**: Remove the `SetupTemplate` field from your `Config`
+4. **Update tests**: Ensure all tests that create pools also create templates first
+
+See the usage examples above for complete code samples.
+
 ## How It Works
 
 ```mermaid
@@ -435,10 +529,13 @@ sequenceDiagram
     participant PG as PostgreSQL
     participant TD as TestDB
 
+    Note over T,PG: Setup (before New())
+    T->>PG: CREATE DATABASE testdbpooltmpl_myapp IS_TEMPLATE true
+    T->>PG: Connect and set up schema
+
     Note over P,PG: First time setup
     T->>P: New(config)
-    P->>PG: Create template database
-    P->>PG: Run SetupTemplate function
+    P->>PG: Verify template exists
     P->>N: Initialize resource pool
 
     Note over T,TD: Test execution
@@ -470,12 +567,13 @@ sequenceDiagram
 
 ### Process Flow
 
-1. **Template Creation**: On first use, testdbpool creates a template database using your `SetupTemplate` function
-2. **Database Creation**: Test databases are created by cloning the template (fast `CREATE DATABASE ... TEMPLATE` operation)
-3. **Resource Management**: Uses [numpool](https://github.com/yuku/numpool) with PostgreSQL advisory locks for efficient resource tracking
-4. **Acquisition**: `Acquire()` returns an available test database or blocks until one becomes available
-5. **Reset**: `Release()` drops the database completely for maximum isolation
-6. **Recreation**: Subsequent `Acquire()` calls create fresh databases from the template
+1. **Template Creation**: You create a template database with `IS_TEMPLATE true` and set up your schema before calling `New()`
+2. **Pool Initialization**: `New()` verifies the template exists and initializes the resource pool
+3. **Database Creation**: Test databases are created by cloning the template (fast `CREATE DATABASE ... TEMPLATE` operation)
+4. **Resource Management**: Uses [numpool](https://github.com/yuku/numpool) with PostgreSQL advisory locks for efficient resource tracking
+5. **Acquisition**: `Acquire()` returns an available test database or blocks until one becomes available
+6. **Reset**: `Release()` drops the database completely for maximum isolation
+7. **Recreation**: Subsequent `Acquire()` calls create fresh databases from the template
 
 ## Configuration Validation
 
@@ -484,8 +582,8 @@ The library validates configuration at startup:
 - **ID**: Must be non-empty and result in valid PostgreSQL database names
 - **Pool**: Must be a valid connection pool to a PostgreSQL server
 - **MaxDatabases**: Must be between 1 and 64 (defaults to `min(GOMAXPROCS, 64)`)
-- **SetupTemplate**: Required function to initialize the template database
 - **DatabaseOwner**: Optional; must be a valid PostgreSQL identifier if specified
+- **Template Database**: Must exist with name `testdbpooltmpl_{ID}` before calling `New()`
 
 See [config_test.go](config_test.go) for comprehensive validation examples.
 
@@ -496,11 +594,20 @@ The `DatabaseOwner` field allows you to specify a different owner for the templa
 ### Basic Usage
 
 ```go
+// First create the template database with the desired owner
+templateName := "testdbpooltmpl_myapp-test"
+_, err := connPool.Exec(ctx, fmt.Sprintf(
+    "CREATE DATABASE %s OWNER %s IS_TEMPLATE true",
+    pgx.Identifier{templateName}.Sanitize(),
+    pgx.Identifier{"app_user"}.Sanitize(),
+))
+// ... connect to template and set up schema ...
+
+// Then configure the pool
 config := &testdbpool.Config{
     ID:            "myapp-test",
     Pool:          connPool,
-    DatabaseOwner: "app_user",  // Databases will be owned by 'app_user'
-    SetupTemplate: setupSchema,
+    DatabaseOwner: "app_user",  // Test databases will be owned by 'app_user'
 }
 ```
 
@@ -585,9 +692,10 @@ Check that your connection user has the required privileges as outlined above.
 2. **Connection Management**: Let `MaxDatabases` default to CPU cores for optimal performance
 3. **Always Release**: Always defer `db.Release(ctx)` to ensure databases are returned to the pool
 4. **Shared Pools**: Use the same `ID` across test packages that share the same schema
-5. **Template Functions**: Keep `SetupTemplate` idempotent - it may be called multiple times
+5. **Template Creation**: Create template databases once in TestMain or a setup script before running tests
 6. **Cleanup Strategy**: Use `Cleanup()` in one place (e.g., TestMain) and `Close()` everywhere else
 7. **Concurrent Testing**: Design tests to work reliably with the DROP DATABASE strategy's timing characteristics
+8. **Multi-package Testing**: When running `go test ./...`, ensure template databases exist before tests start
 
 ## Performance Benefits
 
