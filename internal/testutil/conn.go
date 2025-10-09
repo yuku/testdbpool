@@ -102,8 +102,13 @@ func CreateTemplateDatabaseWithOwner(t *testing.T, pool *pgxpool.Pool, poolID st
 		pgx.Identifier{templateName}.Sanitize(),
 	))
 
+	// Create the owner user if it doesn't exist
+	_, _ = pool.Exec(ctx, fmt.Sprintf("DROP USER IF EXISTS %s", pgx.Identifier{owner}.Sanitize()))
+	_, err := pool.Exec(ctx, fmt.Sprintf("CREATE USER %s WITH LOGIN", pgx.Identifier{owner}.Sanitize()))
+	require.NoError(t, err, "failed to create owner user")
+
 	// Create template database with owner
-	_, err := pool.Exec(ctx, fmt.Sprintf(
+	_, err = pool.Exec(ctx, fmt.Sprintf(
 		"CREATE DATABASE %s OWNER %s IS_TEMPLATE true",
 		pgx.Identifier{templateName}.Sanitize(),
 		pgx.Identifier{owner}.Sanitize(),

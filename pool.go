@@ -44,10 +44,6 @@ type Config struct {
 	// If not set (0), defaults to min(runtime.GOMAXPROCS(0), numpool.MaxResourcesLimit).
 	MaxDatabases int
 
-	// SetupTemplate is called once to set up the template database.
-	// The template database is used as a source for creating test databases.
-	SetupTemplate func(context.Context, *pgx.Conn) error
-
 	// DatabaseOwner specifies the owner for template and test databases.
 	// If empty, uses the default owner (connection user).
 	//
@@ -87,10 +83,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("MaxDatabases must be between 1 and %d, got %d", numpool.MaxResourcesLimit, c.MaxDatabases)
 	}
 
-	if c.SetupTemplate == nil {
-		return fmt.Errorf("SetupTemplate function is required")
-	}
-
 	if c.DatabaseOwner != "" {
 		if !pgconst.IsValidPostgreSQLIdentifier(c.DatabaseOwner) {
 			return fmt.Errorf("invalid DatabaseOwner: %s", c.DatabaseOwner)
@@ -128,7 +120,6 @@ func New(ctx context.Context, cfg *Config) (*Pool, error) {
 	templateDB, err := templatedb.New(&templatedb.Config{
 		PoolID:        cfg.ID,
 		ConnPool:      cfg.Pool,
-		Setup:         cfg.SetupTemplate,
 		DatabaseOwner: cfg.DatabaseOwner,
 	})
 	if err != nil {
