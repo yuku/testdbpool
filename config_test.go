@@ -1,11 +1,9 @@
 package testdbpool
 
 import (
-	"context"
 	"runtime"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/yuku/numpool"
@@ -13,11 +11,6 @@ import (
 )
 
 func TestConfig_Validate(t *testing.T) {
-	// Helper functions for test setup
-	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
-		return nil
-	}
-
 	tests := []struct {
 		name      string
 		config    Config
@@ -28,20 +21,18 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{}, // Mock pool for testing
-				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{}, // Mock pool for testing
+				MaxDatabases: 5,
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty ID",
 			config: Config{
-				ID:            "",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
+				ID:           "",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: 5,
 			},
 			wantErr: true,
 			errMsg:  "ID is required",
@@ -49,10 +40,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "nil pool",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          nil,
-				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         nil,
+				MaxDatabases: 5,
 			},
 			wantErr: true,
 			errMsg:  "pool is required",
@@ -60,10 +50,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "zero MaxDatabases applies default",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  0, // Should be set to default
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: 0, // Should be set to default
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, c *Config) {
@@ -74,10 +63,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "negative MaxDatabases",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  -1,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: -1,
 			},
 			wantErr: true,
 			errMsg:  "MaxDatabases must be between 1 and 64, got -1",
@@ -85,10 +73,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "MaxDatabases exceeds limit",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  numpool.MaxResourcesLimit + 1,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: numpool.MaxResourcesLimit + 1,
 			},
 			wantErr: true,
 			errMsg:  "MaxDatabases must be between 1 and 64, got 65",
@@ -96,41 +83,27 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "MaxDatabases at maximum limit",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  numpool.MaxResourcesLimit,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: numpool.MaxResourcesLimit,
 			},
 			wantErr: false,
 		},
 		{
 			name: "MaxDatabases at minimum valid value",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  1,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-pool",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: 1,
 			},
 			wantErr: false,
 		},
 		{
-			name: "nil SetupTemplate",
-			config: Config{
-				ID:            "test-pool",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  5,
-				SetupTemplate: nil,
-			},
-			wantErr: true,
-			errMsg:  "SetupTemplate function is required",
-		},
-		{
 			name: "all fields nil except ID",
 			config: Config{
-				ID:            "test-pool",
-				Pool:          nil,
-				MaxDatabases:  0,
-				SetupTemplate: nil,
+				ID:           "test-pool",
+				Pool:         nil,
+				MaxDatabases: 0,
 			},
 			wantErr: true,
 			errMsg:  "pool is required", // First validation error
@@ -141,7 +114,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "my_owner",
 			},
 			wantErr: false,
@@ -152,7 +124,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "",
 			},
 			wantErr: false,
@@ -163,7 +134,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "2invalid",
 			},
 			wantErr: true,
@@ -175,7 +145,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "invalid owner",
 			},
 			wantErr: true,
@@ -187,7 +156,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "invalid-owner",
 			},
 			wantErr: true,
@@ -199,7 +167,6 @@ func TestConfig_Validate(t *testing.T) {
 				ID:            "test-pool",
 				Pool:          &pgxpool.Pool{},
 				MaxDatabases:  5,
-				SetupTemplate: validSetupTemplate,
 				DatabaseOwner: "this_is_a_very_long_identifier_name_that_exceeds_the_maximum_length",
 			},
 			wantErr: true,
@@ -233,15 +200,10 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestConfig_Validate_DefaultMaxDatabases(t *testing.T) {
 	// Test the default value calculation separately to ensure it's working correctly
-	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
-		return nil
-	}
-
 	config := Config{
-		ID:            "test-default",
-		Pool:          &pgxpool.Pool{},
-		MaxDatabases:  0, // Should trigger default calculation
-		SetupTemplate: validSetupTemplate,
+		ID:           "test-default",
+		Pool:         &pgxpool.Pool{},
+		MaxDatabases: 0, // Should trigger default calculation
 	}
 
 	err := config.Validate()
@@ -256,10 +218,6 @@ func TestConfig_Validate_DefaultMaxDatabases(t *testing.T) {
 
 // TestConfig_Validate_EdgeCases tests edge cases for MaxDatabases validation
 func TestConfig_Validate_EdgeCases(t *testing.T) {
-	validSetupTemplate := func(ctx context.Context, conn *pgx.Conn) error {
-		return nil
-	}
-
 	testCases := []struct {
 		name         string
 		maxDatabases int
@@ -275,10 +233,9 @@ func TestConfig_Validate_EdgeCases(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			config := Config{
-				ID:            "test-edge-case",
-				Pool:          &pgxpool.Pool{},
-				MaxDatabases:  tc.maxDatabases,
-				SetupTemplate: validSetupTemplate,
+				ID:           "test-edge-case",
+				Pool:         &pgxpool.Pool{},
+				MaxDatabases: tc.maxDatabases,
 			}
 
 			err := config.Validate()

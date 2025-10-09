@@ -26,15 +26,17 @@ func TestIntegration_SingleSequential(t *testing.T) {
 	t.Cleanup(testutil.CleanupNumpool(connPool))
 
 	t.Run("acquire sequentially without resource occupation", func(t *testing.T) {
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, "integration_single_sequential", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		// Create a testdbpool instance with two databases.
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "integration_single_sequential",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -99,15 +101,17 @@ func TestIntegration_SingleSequential(t *testing.T) {
 	})
 
 	t.Run("acquire sequentially with resource occupation", func(t *testing.T) {
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, "integration_single_sequential_occupied", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		// Create a testdbpool instance with two databases.
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "integration_single_sequential_occupied",
 			Pool:         connPool,
 			MaxDatabases: 1,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -148,14 +152,16 @@ func TestIntegration_SingleConcurrent(t *testing.T) {
 	connPool := testutil.GetTestDBPool(t)
 	t.Cleanup(testutil.CleanupNumpool(connPool))
 
+	// Create template database
+	testutil.CreateTemplateDatabase(t, connPool, "integration_single_concurrent", func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+		return err
+	})
+
 	pool, err := testdbpool.New(ctx, &testdbpool.Config{
 		ID:           "integration_single_concurrent",
 		Pool:         connPool,
 		MaxDatabases: 2,
-		SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-			return err
-		},
 	})
 
 	require.NoError(t, err)
@@ -210,16 +216,18 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 	t.Cleanup(testutil.CleanupNumpool(connPool))
 
 	t.Run("acquire sequentially without resource occupation", func(t *testing.T) {
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, "integration_multiple_sequential", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		pools := make([]*testdbpool.Pool, 3)
 		for i := range len(pools) {
 			pool, err := testdbpool.New(ctx, &testdbpool.Config{
 				ID:           "integration_multiple_sequential",
 				Pool:         connPool,
 				MaxDatabases: 2,
-				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			require.NotNil(t, pool)
@@ -288,16 +296,18 @@ func TestIntegration_MultipleSequential(t *testing.T) {
 	})
 
 	t.Run("acquire sequentially with resource occupation", func(t *testing.T) {
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, "integration_multiple_sequential_occupied", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+			return err
+		})
+
 		pools := make([]*testdbpool.Pool, 2)
 		for i := range len(pools) {
 			pool, err := testdbpool.New(ctx, &testdbpool.Config{
 				ID:           "integration_multiple_sequential_occupied",
 				Pool:         connPool,
 				MaxDatabases: 1,
-				SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-					_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-					return err
-				},
 			})
 			require.NoError(t, err)
 			require.NotNil(t, pool)
@@ -348,16 +358,18 @@ func TestIntegration_MultipleConcurrent(t *testing.T) {
 	connPool := testutil.GetTestDBPool(t)
 	t.Cleanup(testutil.CleanupNumpool(connPool))
 
+	// Create template database
+	testutil.CreateTemplateDatabase(t, connPool, "integration_multiple_concurrent", func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
+		return err
+	})
+
 	pools := make([]*testdbpool.Pool, 3)
 	for i := range len(pools) {
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:           "integration_multiple_concurrent",
 			Pool:         connPool,
 			MaxDatabases: 2,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE foos (id SERIAL PRIMARY KEY, name TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -422,15 +434,11 @@ func TestIntegration_DatabaseOwner(t *testing.T) {
 	t.Run("with valid database owner", func(t *testing.T) {
 		// First, create a test user that will own the databases
 		testOwner := "testowner"
-		_, err := connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
-		require.NoError(t, err)
 
-		_, err = connPool.Exec(ctx, `CREATE USER `+testOwner+` WITH LOGIN`)
-		require.NoError(t, err)
-
-		t.Cleanup(func() {
-			// Clean up the test user after the test
-			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		// Create template database with owner (this will clean up any existing template database first)
+		testutil.CreateTemplateDatabaseWithOwner(t, connPool, "integration_database_owner", testOwner, func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+			return err
 		})
 
 		// Create a testdbpool instance with DatabaseOwner
@@ -439,14 +447,16 @@ func TestIntegration_DatabaseOwner(t *testing.T) {
 			Pool:          connPool,
 			MaxDatabases:  1,
 			DatabaseOwner: testOwner,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
 		t.Cleanup(pool.Cleanup)
+
+		// Clean up the test user after the pool cleanup (registered last, runs first)
+		t.Cleanup(func() {
+			// Clean up the test user after the test
+			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		})
 
 		// Acquire a database
 		db, err := pool.Acquire(ctx)
@@ -481,16 +491,18 @@ func TestIntegration_DatabaseOwner(t *testing.T) {
 	})
 
 	t.Run("without database owner (default behavior)", func(t *testing.T) {
+		// Create template database
+		testutil.CreateTemplateDatabase(t, connPool, "integration_no_database_owner", func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+			return err
+		})
+
 		// Create a testdbpool instance without DatabaseOwner (empty string)
 		pool, err := testdbpool.New(ctx, &testdbpool.Config{
 			ID:            "integration_no_database_owner",
 			Pool:          connPool,
 			MaxDatabases:  1,
 			DatabaseOwner: "", // Empty string should use default behavior
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
@@ -515,14 +527,11 @@ func TestIntegration_DatabaseOwner(t *testing.T) {
 	t.Run("with underscore in database owner name", func(t *testing.T) {
 		// Test with a valid PostgreSQL identifier that contains underscores
 		testOwner := "test_owner_123"
-		_, err := connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
-		require.NoError(t, err)
 
-		_, err = connPool.Exec(ctx, `CREATE USER `+testOwner+` WITH LOGIN`)
-		require.NoError(t, err)
-
-		t.Cleanup(func() {
-			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		// Create template database with owner (this will clean up any existing template database and create the user)
+		testutil.CreateTemplateDatabaseWithOwner(t, connPool, "integration_database_owner_underscore", testOwner, func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
+			return err
 		})
 
 		// Create a testdbpool instance with underscore in DatabaseOwner
@@ -531,14 +540,15 @@ func TestIntegration_DatabaseOwner(t *testing.T) {
 			Pool:          connPool,
 			MaxDatabases:  1,
 			DatabaseOwner: testOwner,
-			SetupTemplate: func(ctx context.Context, conn *pgx.Conn) error {
-				_, err := conn.Exec(ctx, `CREATE TABLE test_table (id SERIAL PRIMARY KEY, data TEXT)`)
-				return err
-			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, pool)
 		t.Cleanup(pool.Cleanup)
+
+		// Clean up the test user after the pool cleanup (registered last, runs first)
+		t.Cleanup(func() {
+			_, _ = connPool.Exec(ctx, `DROP USER IF EXISTS `+testOwner)
+		})
 
 		// Acquire a database
 		db, err := pool.Acquire(ctx)
