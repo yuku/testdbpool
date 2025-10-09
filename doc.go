@@ -17,60 +17,57 @@
 //
 // # Basic Usage
 //
-// The typical usage pattern involves creating a template database, setting up a shared pool
-// in TestMain, and using it across multiple test functions:
+// For multi-package testing with `go test ./...`, create template databases in a setup script
+// that runs before tests, then use the pre-created template in each package's TestMain:
 //
-//	func TestMain(m *testing.M) {
+// Step 1: Create a setup script (scripts/setup-test-template.go):
+//
+//	package main
+//
+//	func main() {
 //		ctx := context.Background()
+//		connPool, _ := pgxpool.New(ctx, os.Getenv("TEST_DATABASE_URL"))
+//		defer connPool.Close()
 //
-//		// Create connection pool to PostgreSQL server
-//		connPool, err := pgxpool.New(ctx, "postgres://user:pass@localhost/postgres")
-//		if err != nil {
-//			panic(err)
-//		}
+//		templateName := "testdbpooltmpl_myapp-test"
+//		// Clean up existing template
+//		_, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false", ...))
+//		_, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s", ...))
 //
 //		// Create template database
-//		templateName := "testdbpooltmpl_myapp-test"
-//		_, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
-//			pgx.Identifier{templateName}.Sanitize()))
-//		_, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
-//			pgx.Identifier{templateName}.Sanitize()))
-//		_, err = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
-//			pgx.Identifier{templateName}.Sanitize()))
-//		if err != nil {
-//			panic(err)
-//		}
+//		_, _ = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true", ...))
 //
 //		// Connect to template and set up schema
 //		cfg := connPool.Config().ConnConfig.Copy()
 //		cfg.Database = templateName
-//		templateConn, err := pgx.ConnectConfig(ctx, cfg)
-//		if err != nil {
-//			panic(err)
-//		}
-//		_, err = templateConn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
-//		templateConn.Close(ctx)
-//		if err != nil {
-//			panic(err)
-//		}
+//		templateConn, _ := pgx.ConnectConfig(ctx, cfg)
+//		defer templateConn.Close(ctx)
+//		_, _ = templateConn.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+//	}
 //
-//		// Configure test database pool
+// Step 2: Run setup before tests (Makefile):
+//
+//	test:
+//		go run scripts/setup-test-template.go
+//		go test -v ./...
+//
+// Step 3: Use the pre-created template in each package's TestMain:
+//
+//	func TestMain(m *testing.M) {
+//		ctx := context.Background()
+//		connPool, _ := pgxpool.New(ctx, os.Getenv("TEST_DATABASE_URL"))
+//
+//		// Use pre-created template (no template creation here)
 //		config := &testdbpool.Config{
 //			ID:   "myapp-test",
 //			Pool: connPool,
 //		}
+//		testPool, _ := testdbpool.New(ctx, config)
 //
-//		// Create the test pool
-//		testPool, err = testdbpool.New(ctx, config)
-//		if err != nil {
-//			panic(err)
-//		}
-//
-//		// Run tests
 //		code := m.Run()
 //
-//		// Cleanup
-//		testPool.Cleanup()
+//		// Close this instance (don't cleanup - other packages may be using it)
+//		testPool.Close(ctx)
 //		connPool.Close()
 //		os.Exit(code)
 //	}

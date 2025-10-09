@@ -24,17 +24,121 @@ go get github.com/yuku/testdbpool
 
 ## Usage
 
-### Realistic Example with TestMain
+### Quick Start for Multi-Package Testing
+
+The recommended pattern for `go test ./...` is to create template databases once before running tests, then have each package use the pre-created template:
+
+**Step 1: Create a setup script**
+
+```bash
+# scripts/setup-test-db.sh
+#!/bin/bash
+go run scripts/setup-test-template.go
+```
+
+**Step 2: Run tests**
+
+```bash
+# Makefile
+.PHONY: test
+test:
+	./scripts/setup-test-db.sh
+	go test -v ./...
+```
+
+This ensures the template database exists before any package's `TestMain` runs, allowing all packages to share the same pool resources when running `go test ./...`.
+
+### Template Database Setup
+
+Create a setup script that runs before your tests:
 
 ```go
-package mytest
+// scripts/setup-test-template.go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgxpool"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Get database URL from environment or use default
+    dbURL := os.Getenv("TEST_DATABASE_URL")
+    if dbURL == "" {
+        dbURL = "postgres://user:pass@localhost/postgres"
+    }
+
+    // Connect to PostgreSQL
+    connPool, err := pgxpool.New(ctx, dbURL)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer connPool.Close()
+
+    templateName := "testdbpooltmpl_myapp-test"
+
+    // Clean up any existing template
+    _, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
+        pgx.Identifier{templateName}.Sanitize()))
+    _, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
+        pgx.Identifier{templateName}.Sanitize()))
+
+    // Create template database
+    _, err = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
+        pgx.Identifier{templateName}.Sanitize()))
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Connect to template and set up schema
+    cfg := connPool.Config().ConnConfig.Copy()
+    cfg.Database = templateName
+    templateConn, err := pgx.ConnectConfig(ctx, cfg)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer templateConn.Close(ctx)
+
+    // Set up your database schema
+    _, err = templateConn.Exec(ctx, `
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE posts (
+            id SERIAL PRIMARY KEY,
+            user_id INT REFERENCES users(id),
+            title TEXT NOT NULL
+        );
+    `)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    log.Printf("Template database '%s' created successfully", templateName)
+}
+```
+
+### Using the Template in Tests
+
+Each test package's `TestMain` simply connects to the pool using the pre-created template:
+
+```go
+// package1/user_test.go
+package package1
 
 import (
     "context"
     "os"
     "testing"
-    
-    "github.com/jackc/pgx/v5"
+
     "github.com/jackc/pgx/v5/pgxpool"
     "github.com/yuku/testdbpool"
 )
@@ -47,62 +151,24 @@ var (
 func TestMain(m *testing.M) {
     ctx := context.Background()
 
-    // Create a connection pool to the PostgreSQL server
+    // Connect to PostgreSQL
     var err error
-    connPool, err = pgxpool.New(ctx, "postgres://user:pass@localhost/postgres")
+    dbURL := os.Getenv("TEST_DATABASE_URL")
+    if dbURL == "" {
+        dbURL = "postgres://user:pass@localhost/postgres"
+    }
+    connPool, err = pgxpool.New(ctx, dbURL)
     if err != nil {
         panic(err)
     }
 
-    // Create the template database
-    templateName := "testdbpooltmpl_myapp-test"
-
-    // Clean up any existing template from previous runs
-    _, _ = connPool.Exec(ctx, fmt.Sprintf("ALTER DATABASE %s IS_TEMPLATE false",
-        pgx.Identifier{templateName}.Sanitize()))
-    _, _ = connPool.Exec(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS %s",
-        pgx.Identifier{templateName}.Sanitize()))
-
-    // Create new template database
-    _, err = connPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s IS_TEMPLATE true",
-        pgx.Identifier{templateName}.Sanitize()))
-    if err != nil {
-        panic(err)
-    }
-
-    // Connect to template database and set up schema
-    cfg := connPool.Config().ConnConfig.Copy()
-    cfg.Database = templateName
-    templateConn, err := pgx.ConnectConfig(ctx, cfg)
-    if err != nil {
-        panic(err)
-    }
-
-    // Set up your database schema in the template
-    _, err = templateConn.Exec(ctx, `
-        CREATE TABLE users (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL
-        );
-        CREATE TABLE posts (
-            id SERIAL PRIMARY KEY,
-            user_id INT REFERENCES users(id),
-            title TEXT NOT NULL
-        );
-    `)
-    templateConn.Close(ctx)
-    if err != nil {
-        panic(err)
-    }
-
-    // Configure the test database pool
+    // Use the pre-created template database
+    // Template "testdbpooltmpl_myapp-test" must already exist
     config := &testdbpool.Config{
-        ID:           "myapp-test",
-        Pool:         connPool,
-        MaxDatabases: 0, // Defaults to min(GOMAXPROCS, 64)
+        ID:   "myapp-test",
+        Pool: connPool,
     }
 
-    // Create the test database pool
     testPool, err = testdbpool.New(ctx, config)
     if err != nil {
         panic(err)
@@ -111,8 +177,8 @@ func TestMain(m *testing.M) {
     // Run tests
     code := m.Run()
 
-    // Cleanup
-    testPool.Cleanup()
+    // Close this instance (don't call Cleanup - other packages may still be using the pool)
+    testPool.Close(ctx)
     connPool.Close()
 
     os.Exit(code)
@@ -692,10 +758,11 @@ Check that your connection user has the required privileges as outlined above.
 2. **Connection Management**: Let `MaxDatabases` default to CPU cores for optimal performance
 3. **Always Release**: Always defer `db.Release(ctx)` to ensure databases are returned to the pool
 4. **Shared Pools**: Use the same `ID` across test packages that share the same schema
-5. **Template Creation**: Create template databases once in TestMain or a setup script before running tests
-6. **Cleanup Strategy**: Use `Cleanup()` in one place (e.g., TestMain) and `Close()` everywhere else
-7. **Concurrent Testing**: Design tests to work reliably with the DROP DATABASE strategy's timing characteristics
-8. **Multi-package Testing**: When running `go test ./...`, ensure template databases exist before tests start
+5. **Pre-create Templates**: Create template databases in a setup script that runs before `go test ./...`
+6. **Don't Cleanup in Packages**: When running `go test ./...`, each package should call `Close()` not `Cleanup()`
+7. **Cleanup After All Tests**: Only call `Cleanup()` after all packages complete, or use a cleanup script
+8. **Environment Variables**: Use environment variables for database URLs to support different environments
+9. **Concurrent Testing**: Design tests to work reliably with the DROP DATABASE strategy's timing characteristics
 
 ## Performance Benefits
 
